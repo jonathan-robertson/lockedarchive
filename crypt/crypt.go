@@ -20,6 +20,7 @@ func InitializeBlock(key string) (err error) {
 }
 
 // Encrypt receives plaintext bytes and returns encrypted bytes
+// Based heavily off of https://golang.org/pkg/crypto/cipher/#example_NewCBCEncrypter
 func Encrypt(plaintext []byte) (ciphertext []byte, err error) {
 	if block == nil {
 		err = errors.New("blockchain not initialized with key")
@@ -71,6 +72,7 @@ func EncryptStringToHexString(unencryptedString string) (encryptedHexString stri
 }
 
 // Decrypt receives encrypted bytes and returns decrypted bytes
+// Based heavily off of https://golang.org/pkg/crypto/cipher/#example_NewCBCDecrypter
 func Decrypt(ciphertext []byte) (plaintext []byte, err error) {
 	if block == nil {
 		err = errors.New("blockchain not initialized with key")
