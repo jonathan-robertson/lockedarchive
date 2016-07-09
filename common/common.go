@@ -1,6 +1,10 @@
 package common
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/puddingfactory/filecabinet/crypt"
+)
 
 type Cabinet struct {
 	Name string // aws bucket
@@ -38,6 +42,26 @@ type File struct {
 	// REF: http://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html
 	// NOTE: The PUT request header is limited to 8 KB in size. Within the PUT request header, the user-defined metadata is limited to 2 KB in size. The size of user-defined metadata is measured by taking the sum of the number of bytes in the UTF-8 encoding of each key and value
 	Text string
+}
+
+func (f *File) EncryptData() (err error) {
+	f.Data, err = crypt.Encrypt(f.Data)
+	return
+}
+
+func (f *File) EncryptName() (err error) {
+	f.Name, err = crypt.EncryptStringToHexString(f.Name)
+	return
+}
+
+func (f *File) DecryptData() (err error) {
+	f.Data, err = crypt.Decrypt(f.Data)
+	return
+}
+
+func (f *File) DecryptName() (err error) {
+	f.Name, err = crypt.DecryptHexStringToString(f.Name)
+	return
 }
 
 // type Folder struct {
