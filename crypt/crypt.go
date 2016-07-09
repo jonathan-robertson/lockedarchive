@@ -10,11 +10,21 @@ import (
 )
 
 var (
-	key = []byte("example key 1234")
+	block cipher.Block
 )
+
+// InitializeBlock sets the blockchain to use the provided key for encryption and decryption
+func InitializeBlock(key string) (err error) {
+	block, err = aes.NewCipher([]byte(key))
+	return
+}
 
 // Encrypt receives plaintext bytes and returns encrypted bytes
 func Encrypt(plaintext []byte) (ciphertext []byte, err error) {
+	if block == nil {
+		err = errors.New("blockchain not initialized with key")
+		return
+	}
 
 	// CBC mode works on blocks so plaintexts may need to be padded to the
 	// next whole block. For an example of such padding, see
@@ -25,11 +35,6 @@ func Encrypt(plaintext []byte) (ciphertext []byte, err error) {
 
 		padding := make([]byte, paddingLength)    // Make byte slice with zeros for padding
 		plaintext = append(plaintext, padding...) // Add zero padding to the end of plaintext bytes
-	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return
 	}
 
 	// The IV needs to be unique, but not secure. Therefore it's common to
@@ -67,10 +72,9 @@ func EncryptStringToHexString(unencryptedString string) (encryptedHexString stri
 
 // Decrypt receives encrypted bytes and returns decrypted bytes
 func Decrypt(ciphertext []byte) (plaintext []byte, err error) {
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		panic(err)
+	if block == nil {
+		err = errors.New("blockchain not initialized with key")
+		return
 	}
 
 	// The IV needs to be unique, but not secure. Therefore it's common to

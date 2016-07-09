@@ -3,6 +3,10 @@ package crypt
 import "testing"
 
 func TestEncryptionAndDecryption(t *testing.T) {
+	if err := InitializeBlock("example key 1234"); err != nil {
+		t.Fatal(err)
+	}
+
 	unencryptedString := "exampleplaintext"
 
 	t.Logf("Unencrypted string: %s", unencryptedString)
