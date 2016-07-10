@@ -1,5 +1,5 @@
 # Purpose
-I really just want a way to store my family's personal information online in a way that's made easy to access without sacrificing any security.
+I really just want to store my family's personal information online in a way that's easy to access without sacrificing any security.
 
 # Design Goals
 
