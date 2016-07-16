@@ -1,6 +1,7 @@
 package crypt
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -14,17 +15,19 @@ var (
 )
 
 // InitializeBlock sets the blockchain to use the provided key for encryption and decryption
-func InitializeBlock(key string) (err error) {
+func InitializeBlock(key string) {
+	var err error
 	block, err = aes.NewCipher([]byte(key))
-	return
+	if err != nil {
+		panic(err)
+	}
 }
 
 // Encrypt receives plaintext bytes and returns encrypted bytes
 // Based heavily off of https://golang.org/pkg/crypto/cipher/#example_NewCBCEncrypter
 func Encrypt(plaintext []byte) (ciphertext []byte, err error) {
 	if block == nil {
-		err = errors.New("blockchain not initialized with key")
-		return
+		panic("blockchain not initialized with key")
 	}
 
 	// CBC mode works on blocks so plaintexts may need to be padded to the
@@ -75,8 +78,7 @@ func EncryptStringToHexString(unencryptedString string) (encryptedHexString stri
 // Based heavily off of https://golang.org/pkg/crypto/cipher/#example_NewCBCDecrypter
 func Decrypt(ciphertext []byte) (plaintext []byte, err error) {
 	if block == nil {
-		err = errors.New("blockchain not initialized with key")
-		return
+		panic("blockchain not initialized with key")
 	}
 
 	// The IV needs to be unique, but not secure. Therefore it's common to
@@ -98,7 +100,6 @@ func Decrypt(ciphertext []byte) (plaintext []byte, err error) {
 
 	// CryptBlocks can work in-place if the two arguments are the same.
 	mode.CryptBlocks(ciphertext, ciphertext)
-	plaintext = ciphertext
 
 	// If the original plaintext lengths are not a multiple of the block
 	// size, padding would have to be added when encrypting, which would be
@@ -108,7 +109,9 @@ func Decrypt(ciphertext []byte) (plaintext []byte, err error) {
 	// using crypto/hmac) before being decrypted in order to avoid creating
 	// a padding oracle.
 
-	return
+	ciphertext = bytes.TrimRight(ciphertext, "\x00") // REVIEW: is it safe to just trim padding characters off the end?
+
+	return ciphertext, nil
 }
 
 // DecryptHexStringToString receives an encrypted hex string and returns a decrypted string
