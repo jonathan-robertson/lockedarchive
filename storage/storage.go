@@ -1,15 +1,27 @@
 package storage
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/puddingfactory/filecabinet/crypt"
 )
 
-type Cabinet struct {
-	Name string // aws bucket
+type entry interface {
+	DecryptName() error
+	EncryptName() error
+	id() string
+}
+
+type safeMap struct {
 	sync.RWMutex
-	FileMap map[string]File
+	m map[string]entry
+}
+
+type Cabinet struct {
+	Name      string // aws bucket
+	FileMap   *safeMap
+	FolderMap *safeMap
 }
 
 type File struct {
@@ -44,6 +56,68 @@ type File struct {
 	Text string
 }
 
+var (
+	_ entry = (*File)(nil)
+	// _ entry = (*Folder)(nil)
+
+	errIdentifierInUse = errors.New("ID in use")
+	errEntryNotPresent = errors.New("No entry at provided ID")
+)
+
+func newSafeMap() *safeMap {
+	return &safeMap{
+		m: make(map[string]entry),
+	}
+}
+
+func (s *safeMap) insert(e entry) error {
+	s.Lock()
+	defer s.Unlock()
+
+	if _, ok := s.m[e.id()]; ok { // Expecting entry to not exist yet
+		return errIdentifierInUse
+	}
+	s.m[e.id()] = e
+
+	return nil
+}
+
+func (s *safeMap) update(e entry) error {
+	s.Lock()
+	defer s.Unlock()
+
+	if _, ok := s.m[e.id()]; !ok { // Expecting entry to exist already
+		return errEntryNotPresent
+	}
+	s.m[e.id()] = e
+
+	return nil
+}
+
+func (s *safeMap) delete(id string) error {
+	s.Lock()
+	defer s.Unlock()
+
+	delete(s.m, id)
+	return nil
+}
+
+func (s *safeMap) get(id string) (entry, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	e, ok := s.m[id]
+	if !ok {
+		return nil, errEntryNotPresent
+	}
+
+	return e, nil
+}
+
+func (f *File) id() string {
+	return f.ID
+}
+
 func (f *File) EncryptData() (err error) {
 	f.Data, err = crypt.Encrypt(f.Data)
 	return
@@ -68,3 +142,11 @@ func (f *File) DecryptName() (err error) {
 //     Parent string
 //     Name string
 // }
+
+func NewCabinet(name string) *Cabinet {
+	return &Cabinet{
+		Name:      name,
+		FileMap:   newSafeMap(),
+		FolderMap: newSafeMap(),
+	}
+}
