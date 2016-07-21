@@ -38,14 +38,10 @@ type Entry struct {
 	Metadata map[string]string
 }
 
-type entrymap struct {
-	sync.RWMutex
-	m map[string]Entry
-}
-
 type Cabinet struct {
 	Name    string // aws bucket
-	entries *entrymap
+	entries map[string]Entry
+	sync.RWMutex
 }
 
 const (
@@ -76,10 +72,8 @@ var (
 
 func MakeCabinet(name string) *Cabinet {
 	return &Cabinet{
-		Name: name,
-		entries: &entrymap{
-			m: make(map[string]Entry),
-		},
+		Name:    name,
+		entries: make(map[string]Entry),
 	}
 }
 
@@ -99,24 +93,24 @@ func (cab *Cabinet) CreateEntry(e Entry) (Entry, error) {
 	// TODO: Verify Metadata
 	// TODO: Verify EntryType
 
-	cab.entries.Lock()
-	defer cab.entries.Unlock()
+	cab.Lock()
+	defer cab.Unlock()
 
 	// TODO: Verify parent exists
-	if _, ok := cab.entries.m[e.ParentID]; !ok {
+	if _, ok := cab.entries[e.ParentID]; !ok {
 		return e, errParentDoesNotExist
 	}
 
 	var newID string
 	for {
 		newID = generateNewID()
-		if _, ok := cab.entries.m[newID]; !ok {
+		if _, ok := cab.entries[newID]; !ok {
 			break
 		}
 	}
 
 	e.ID = newID
-	cab.entries.m[e.ID] = e
+	cab.entries[e.ID] = e
 
 	// TODO: Upload object to storage provider?
 
@@ -128,42 +122,42 @@ func (cab *Cabinet) AddEntry(e Entry) error {
 		return errNoID
 	}
 
-	cab.entries.Lock()
-	defer cab.entries.Unlock()
+	cab.Lock()
+	defer cab.Unlock()
 
-	if _, ok := cab.entries.m[e.ID]; ok { // Expecting entry to not exist yet
+	if _, ok := cab.entries[e.ID]; ok { // Expecting entry to not exist yet
 		return errIdentifierInUse
 	}
 
-	cab.entries.m[e.ID] = e
+	cab.entries[e.ID] = e
 	return nil
 }
 
 func (cab *Cabinet) UpdateEntry(e Entry) error {
-	cab.entries.Lock()
-	defer cab.entries.Unlock()
+	cab.Lock()
+	defer cab.Unlock()
 
-	if _, ok := cab.entries.m[e.ID]; !ok { // Expecting entry to exist already
+	if _, ok := cab.entries[e.ID]; !ok { // Expecting entry to exist already
 		return errEntryNotPresent
 	}
 
-	cab.entries.m[e.ID] = e
+	cab.entries[e.ID] = e
 	return nil
 }
 
 func (cab *Cabinet) DeleteEntry(id string) error {
-	cab.entries.Lock()
-	defer cab.entries.Unlock()
+	cab.Lock()
+	defer cab.Unlock()
 
-	delete(cab.entries.m, id)
+	delete(cab.entries, id)
 	return nil
 }
 
 func (cab *Cabinet) GetEntry(id string) (Entry, error) {
-	cab.entries.RLock()
-	defer cab.entries.RUnlock()
+	cab.RLock()
+	defer cab.RUnlock()
 
-	e, ok := cab.entries.m[id]
+	e, ok := cab.entries[id]
 	if !ok {
 		return e, errEntryNotPresent
 	}
