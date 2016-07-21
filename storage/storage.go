@@ -1,11 +1,19 @@
 package storage
 
 import (
+	"crypto/rand"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/puddingfactory/filecabinet/crypt"
 )
+
+type Cabinet struct {
+	Name    string           // aws bucket
+	entries map[string]Entry // map[ID]Entry
+	sync.RWMutex
+}
 
 type Entry struct {
 	// Note from Amazon on naming:
@@ -38,12 +46,6 @@ type Entry struct {
 	Metadata map[string]string
 }
 
-type Cabinet struct {
-	Name    string // aws bucket
-	entries map[string]Entry
-	sync.RWMutex
-}
-
 const (
 	/* Following Linux standard
 	-    Regular file
@@ -57,6 +59,8 @@ const (
 	*/
 	typeFile = '-'
 	typeDir  = 'd'
+
+	sizeOfID = 32
 )
 
 var (
@@ -78,7 +82,12 @@ func MakeCabinet(name string) *Cabinet {
 }
 
 func generateNewID() string {
-	return "" // TODO
+	b := make([]byte, sizeOfID)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+
+	return fmt.Sprintf("%x", b)
 }
 
 // CreateEntry receives an Entry without an ID, assigns an ID, and Adds
