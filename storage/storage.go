@@ -6,44 +6,28 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/puddingfactory/filecabinet/crypt"
+	"github.com/puddingfactory/filecabinet/clob"
 )
 
-type Cabinet struct {
-	Name    string           // aws bucket
-	entries map[string]Entry // map[ID]Entry
-	sync.RWMutex
+// Plugin represents an interface other plugable systems where changes made to File Cabinet are also pushed
+type Plugin interface {
+	CreateCabinet() error
+	DeleteCabinet() error
+	List() error
+	Download(clob.Entry) error
+	Create(clob.Entry) error
+	Rename(clob.Entry, string) error
+	Update(clob.Entry) error
+	Delete(clob.Entry) error
+	Copy(clob.Entry, clob.Entry) error
 }
 
-type Entry struct {
-	// Note from Amazon on naming:
-	// Alphanumeric characters [0-9a-zA-Z]
-	// Special characters !, -, _, ., *, ', (, and )
-	// TODO: more notes are on that page... read them more and consider them
-
-	// REVIEW: research and consider search values...
-	// Tags could be recorded as metadata, comma-delimited... on Unmarshal, could have tagMap (map[string][]string == map[tag][]GUIDs)
-
-	// TODO: 32 (?) chars of hex (?), incremented and inverted so that 00...01 becomes 10...00
-	// NOTE: This is all you'll see in S3
-	ID string
-
-	// TODO: Adhere Windows' to standard... or S3's?
-	// NOTE: Also in metadata..?
-	Name string
-
-	// TODO: Store this value in metadata? Or would it make more sense to store it as a prefix so we can do a lookup to get what's immediately inside a dir.
-	// NOTE: Is not nested
-	ParentID string
-
-	// REVIEW: maybe should offload this to local FS instead (cache).
-	Data []byte
-
-	// REVIEW: Does a rune actually work here? Would take less steps to use string instead.
-	EntryType rune
-
-	// NOTE: The PUT request header is limited to 8 KB in size. Within the PUT request header, the user-defined metadata is limited to 2 KB in size. The size of user-defined metadata is measured by taking the sum of the number of bytes in the UTF-8 encoding of each key and value
-	Metadata map[string]string
+// Cabinet represents a collection of entries, symbolizing a cloud container/disk/bucket
+type Cabinet struct {
+	Name    string                // aws bucket
+	entries map[string]clob.Entry // map[ID]clob.Entry
+	plugins []Plugin
+	sync.RWMutex
 }
 
 const (
@@ -77,11 +61,11 @@ var (
 func MakeCabinet(name string) *Cabinet {
 	return &Cabinet{
 		Name:    name,
-		entries: make(map[string]Entry),
+		entries: make(map[string]clob.Entry),
 	}
 }
 
-func generateNewID() string {
+func generateNewID() (newID string) {
 	b := make([]byte, sizeOfID)
 	if _, err := rand.Read(b); err != nil {
 		panic(err)
@@ -91,7 +75,7 @@ func generateNewID() string {
 }
 
 // CreateEntry receives an Entry without an ID, assigns an ID, and Adds
-func (cab *Cabinet) CreateEntry(e Entry) (Entry, error) {
+func (cab *Cabinet) CreateEntry(e clob.Entry) (clob.Entry, error) {
 
 	// Validate entry's fields
 	if len(e.ID) != 0 { // Verify id is empty
@@ -126,7 +110,7 @@ func (cab *Cabinet) CreateEntry(e Entry) (Entry, error) {
 	return e, nil
 }
 
-func (cab *Cabinet) AddEntry(e Entry) error {
+func (cab *Cabinet) AddEntry(e clob.Entry) error {
 	if len(e.ID) == 0 {
 		return errNoID
 	}
@@ -142,7 +126,7 @@ func (cab *Cabinet) AddEntry(e Entry) error {
 	return nil
 }
 
-func (cab *Cabinet) UpdateEntry(e Entry) error {
+func (cab *Cabinet) UpdateEntry(e clob.Entry) error {
 	cab.Lock()
 	defer cab.Unlock()
 
@@ -162,7 +146,7 @@ func (cab *Cabinet) DeleteEntry(id string) error {
 	return nil
 }
 
-func (cab *Cabinet) GetEntry(id string) (Entry, error) {
+func (cab *Cabinet) GetEntry(id string) (clob.Entry, error) {
 	cab.RLock()
 	defer cab.RUnlock()
 
@@ -172,24 +156,4 @@ func (cab *Cabinet) GetEntry(id string) (Entry, error) {
 	}
 
 	return e, nil
-}
-
-func (e *Entry) EncryptData() (err error) {
-	e.Data, err = crypt.Encrypt(e.Data)
-	return
-}
-
-func (e *Entry) EncryptName() (err error) {
-	e.Name, err = crypt.EncryptStringToHexString(e.Name)
-	return
-}
-
-func (e *Entry) DecryptData() (err error) {
-	e.Data, err = crypt.Decrypt(e.Data)
-	return
-}
-
-func (e *Entry) DecryptName() (err error) {
-	e.Name, err = crypt.DecryptHexStringToString(e.Name)
-	return
 }
