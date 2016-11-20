@@ -45,6 +45,8 @@ const (
 	typeDir  = 'd'
 
 	sizeOfID = 32
+
+	rootID = "00000000000000000000000000000000"
 )
 
 var (
