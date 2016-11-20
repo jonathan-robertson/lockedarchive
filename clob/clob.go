@@ -21,7 +21,7 @@ type Entry struct {
 
 	// TODO: Adhere Windows' to standard... or S3's?
 	// NOTE: Also in metadata..?
-	Name string
+	// Name string
 
 	// REVIEW: maybe should offload this to local FS instead (cache).
 	// REVIEW: maybe pass around an io.Reader instead
