@@ -3,7 +3,6 @@ package s3plugin
 import (
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -129,14 +128,13 @@ func (p Plugin) List(prefix string, entries chan clob.Entry) error {
 
 	err := p.svc().ListObjectsV2Pages(params, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
 		for _, o := range page.Contents {
-			key := strings.Split(*o.Key, "/")
-			entries <- clob.Entry{
-				ID:        key[1],
-				ParentID:  key[0],
-				Name:      "",                          // TODO
-				EntryType: 'd',                         // TODO
-				Metadata:  map[string]string{"1": "2"}, // TODO
-			}
+			fmt.Printf("%+v\n", o) // TODO: Test and update
+			// key := strings.Split(*o.Key, "/")
+			// entries <- clob.Entry{
+			// 	ParentID: key[0],
+			// 	ID:       key[1],
+			// 	// Metadata: , // TODO
+			// }
 		}
 
 		return *page.IsTruncated // REVIEW: This may not be totally accurate at all times
@@ -148,13 +146,10 @@ func (p Plugin) List(prefix string, entries chan clob.Entry) error {
 // Create new object in s3
 func (p Plugin) Create(e clob.Entry) error {
 	upParams := &s3manager.UploadInput{
-		Bucket: aws.String(p.Bucket),
-		Key:    aws.String(e.Key()),
-		Body:   e.Body,
-		Metadata: map[string]*string{
-			"Key": aws.String("MetadataValue"), // Required
-			// More values...
-		},
+		Bucket:   aws.String(p.Bucket), // Required
+		Key:      aws.String(e.Key()),  // Required
+		Metadata: convMetaToAWS(e.Metadata),
+		Body:     e.Body,
 	}
 
 	result, err := p.uploader().Upload(upParams)
@@ -170,7 +165,54 @@ func (p Plugin) Create(e clob.Entry) error {
 	return p.confirmObjectCreation(e.Key())
 }
 
+// Rename updates the Name in metadata
 func (p Plugin) Rename(e clob.Entry, newName string) error {
+	e.Metadata["name"] = newName // Update Name
+
+	params := &s3.CopyObjectInput{
+		Bucket:     aws.String(p.Bucket), // Required
+		CopySource: aws.String(e.Key()),  // Required
+		Key:        aws.String(e.Key()),  // Required
+		// ACL:                            aws.String("ObjectCannedACL"),
+		// CacheControl:                   aws.String("CacheControl"),
+		// ContentDisposition:             aws.String("ContentDisposition"),
+		// ContentEncoding:                aws.String("ContentEncoding"),
+		// ContentLanguage:                aws.String("ContentLanguage"),
+		// ContentType:                    aws.String("ContentType"),
+		// CopySourceIfMatch:              aws.String("CopySourceIfMatch"),
+		// CopySourceIfModifiedSince:      aws.Time(time.Now()),
+		// CopySourceIfNoneMatch:          aws.String("CopySourceIfNoneMatch"),
+		// CopySourceIfUnmodifiedSince:    aws.Time(time.Now()),
+		// CopySourceSSECustomerAlgorithm: aws.String("CopySourceSSECustomerAlgorithm"),
+		// CopySourceSSECustomerKey:       aws.String("CopySourceSSECustomerKey"),
+		// CopySourceSSECustomerKeyMD5:    aws.String("CopySourceSSECustomerKeyMD5"),
+		// Expires:                        aws.Time(time.Now()),
+		// GrantFullControl:               aws.String("GrantFullControl"),
+		// GrantRead:                      aws.String("GrantRead"),
+		// GrantReadACP:                   aws.String("GrantReadACP"),
+		// GrantWriteACP:                  aws.String("GrantWriteACP"),
+		Metadata:          convMetaToAWS(e.Metadata),
+		MetadataDirective: aws.String(s3.MetadataDirectiveReplace),
+		// RequestPayer:            aws.String("RequestPayer"),
+		// SSECustomerAlgorithm:    aws.String("SSECustomerAlgorithm"),
+		// SSECustomerKey:          aws.String("SSECustomerKey"),
+		// SSECustomerKeyMD5:       aws.String("SSECustomerKeyMD5"),
+		// SSEKMSKeyId:             aws.String("SSEKMSKeyId"),
+		// ServerSideEncryption:    aws.String("ServerSideEncryption"),
+		// StorageClass:            aws.String("StorageClass"),
+		// WebsiteRedirectLocation: aws.String("WebsiteRedirectLocation"),
+	}
+	resp, err := p.svc().CopyObject(params)
+
+	if err != nil {
+		// Print the error, cast err to awserr.Error to get the Code and
+		// Message from an error.
+		fmt.Println(err.Error())
+		return err
+	}
+
+	// Pretty-print the response data.
+	fmt.Println(resp)
 	return nil
 }
 
@@ -178,6 +220,7 @@ func (p Plugin) Update(e clob.Entry) error {
 	return nil
 }
 
+// Delete removes the entry from storage
 func (p Plugin) Delete(e clob.Entry) error {
 	params := &s3.DeleteObjectInput{
 		Bucket: aws.String(p.Bucket), // Required
@@ -200,7 +243,8 @@ func (p Plugin) Delete(e clob.Entry) error {
 	return p.confirmObjectDeletion(e.Key())
 }
 
-func (p Plugin) Download(e clob.Entry, w io.WriterAt) error {
+// Download writes data from an entry to the provided writer
+func (p Plugin) Download(w io.WriterAt, e clob.Entry) error {
 	params := &s3.GetObjectInput{
 		Bucket: aws.String(p.Bucket), // Required
 		Key:    aws.String(e.Key()),  // Required
@@ -235,11 +279,12 @@ func (p Plugin) Download(e clob.Entry, w io.WriterAt) error {
 	return nil
 }
 
-func (p Plugin) Copy(source clob.Entry, destination clob.Entry) error {
+// Copy duplicates the contents and metadata of one entry to a new key
+func (p Plugin) Copy(source clob.Entry, destinationKey string) error {
 	params := &s3.CopyObjectInput{
-		Bucket:     aws.String(p.Bucket),          // Required
-		CopySource: aws.String(source.Key()),      // Required
-		Key:        aws.String(destination.Key()), // Required
+		Bucket:     aws.String(p.Bucket),       // Required
+		CopySource: aws.String(source.Key()),   // Required
+		Key:        aws.String(destinationKey), // Required
 		// ACL:                            aws.String("ObjectCannedACL"),
 		// CacheControl:                   aws.String("CacheControl"),
 		// ContentDisposition:             aws.String("ContentDisposition"),
@@ -258,11 +303,8 @@ func (p Plugin) Copy(source clob.Entry, destination clob.Entry) error {
 		// GrantRead:                      aws.String("GrantRead"),
 		// GrantReadACP:                   aws.String("GrantReadACP"),
 		// GrantWriteACP:                  aws.String("GrantWriteACP"),
-		// Metadata: map[string]*string{
-		// 	"Key": aws.String("MetadataValue"), // Required
-		// 	// More values...
-		// },
-		// MetadataDirective:       aws.String("MetadataDirective"),
+		// Metadata:          convMetaToAWS(source.Metadata),
+		MetadataDirective: aws.String(s3.MetadataDirectiveCopy),
 		// RequestPayer:            aws.String("RequestPayer"),
 		// SSECustomerAlgorithm:    aws.String("SSECustomerAlgorithm"),
 		// SSECustomerKey:          aws.String("SSECustomerKey"),
@@ -283,7 +325,7 @@ func (p Plugin) Copy(source clob.Entry, destination clob.Entry) error {
 
 	// Pretty-print the response data.
 	fmt.Println(resp)
-	return p.confirmObjectCreation(destination.Key())
+	return p.confirmObjectCreation(destinationKey)
 }
 
 func (p Plugin) confirmBucketCreation() error {
@@ -314,4 +356,22 @@ func (p Plugin) confirmObjectDeletion(key string) error {
 		Key:    aws.String(key),
 	}
 	return p.svc().WaitUntilObjectNotExists(headObjectInput)
+}
+
+// convMetaToAWS converts entry metadata to aws metadata
+func convMetaToAWS(entryMeta map[string]string) map[string]*string {
+	awsMeta := make(map[string]*string)
+	for k, v := range entryMeta {
+		awsMeta[k] = aws.String(v)
+	}
+	return awsMeta
+}
+
+// convMetaToEntry converts aws metadata to entry metadata
+func convMetaToEntry(awsMeta map[string]*string) map[string]string {
+	entryMeta := make(map[string]string)
+	for k, v := range awsMeta {
+		entryMeta[k] = *v
+	}
+	return entryMeta
 }
