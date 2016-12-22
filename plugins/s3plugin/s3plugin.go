@@ -47,10 +47,24 @@ func New(cabinetName, region, accessKey, secretKey string) (p Plugin, err error)
 		getLimiter:        rate.NewLimiter(getLimit, 1),
 	}
 
-	// TODO: does bucket exist?
+	if !p.bucketExists() {
+		err = p.CreateCabinet()
+	}
 
-	err = p.CreateCabinet()
 	return
+}
+
+func (p Plugin) bucketExists() bool {
+	params := &s3.HeadBucketInput{
+		Bucket: aws.String(p.Bucket), // Required
+	}
+
+	time.Sleep(p.putListDelLimiter.Reserve().Delay())
+	if _, err := p.svc().HeadBucket(params); err != nil {
+		return false
+	}
+
+	return true
 }
 
 func (p Plugin) svc() *s3.S3 {
