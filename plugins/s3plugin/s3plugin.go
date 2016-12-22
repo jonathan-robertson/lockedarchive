@@ -98,27 +98,15 @@ func (p Plugin) downloader() *s3manager.Downloader {
 // CreateCabinet will create a new cabinet in storage
 func (p Plugin) CreateCabinet() error {
 	params := &s3.CreateBucketInput{
-		Bucket: aws.String(p.Bucket), // Required
-		// ACL:    aws.String("BucketCannedACL"),
-		// CreateBucketConfiguration: &s3.CreateBucketConfiguration{
-		// 	LocationConstraint: aws.String("BucketLocationConstraint"),
-		// },
-		// GrantFullControl: aws.String("GrantFullControl"),
-		// GrantRead:        aws.String("GrantRead"),
-		// GrantReadACP:     aws.String("GrantReadACP"),
-		// GrantWrite:       aws.String("GrantWrite"),
-		// GrantWriteACP:    aws.String("GrantWriteACP"),
+		Bucket: aws.String(p.Bucket),
 	}
-	resp, err := p.svc().CreateBucket(params)
-	if err != nil {
+
+	if _, err := p.svc().CreateBucket(params); err != nil {
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
 		fmt.Println(err.Error())
 		return err
 	}
-
-	// Pretty-print the response data.
-	fmt.Println(resp)
 
 	return p.confirmBucketCreation()
 }
@@ -126,19 +114,15 @@ func (p Plugin) CreateCabinet() error {
 // DeleteCabinet will delete an existing cabinet from storage
 func (p Plugin) DeleteCabinet() error {
 	params := &s3.DeleteBucketInput{
-		Bucket: aws.String(p.Bucket), // Required
+		Bucket: aws.String(p.Bucket),
 	}
-	resp, err := p.svc().DeleteBucket(params)
 
-	if err != nil {
+	if _, err := p.svc().DeleteBucket(params); err != nil {
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
 		fmt.Println(err.Error())
 		return err
 	}
-
-	// Pretty-print the response data.
-	fmt.Println(resp)
 
 	return p.confirmBucketDeletion()
 }
