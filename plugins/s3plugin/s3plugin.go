@@ -3,6 +3,10 @@ package s3plugin
 import (
 	"fmt"
 	"io"
+	"sync"
+	"time"
+
+	"golang.org/x/time/rate"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -13,24 +17,34 @@ import (
 )
 
 type Plugin struct {
-	Bucket, region, accessKey, secretKey string
+	Bucket            string
+	region            string
+	accessKey         string
+	secretKey         string
+	putListDelLimiter *rate.Limiter
+	getLimiter        *rate.Limiter
 }
 
 var (
-	UploadPartSize      int64 = 64 * 1024 * 1024 // 64MB
-	DownloadPartSize    int64 = 64 * 1024 * 1024 // 64MB
-	UploadConcurrency         = 10
-	DownloadConcurrency       = 10
+	uploadPartSize      int64 = 64 * 1024 * 1024 // 64MB
+	downloadPartSize    int64 = 64 * 1024 * 1024 // 64MB
+	uploadConcurrency         = 10
+	downloadConcurrency       = 10
+
+	putListDelLimit rate.Limit = 100
+	getLimit        rate.Limit = 300
 )
 
 // New will return a new s3 plugin after creating the Bucket (if necessary)
 func New(cabinetName, region, accessKey, secretKey string) (p Plugin, err error) {
 	// REVIEW: Verify validity of cabinetName as a bucket name first
 	p = Plugin{
-		Bucket:    cabinetName,
-		region:    region,
-		accessKey: accessKey,
-		secretKey: secretKey,
+		Bucket:            cabinetName,
+		region:            region,
+		accessKey:         accessKey,
+		secretKey:         secretKey,
+		putListDelLimiter: rate.NewLimiter(putListDelLimit, 1),
+		getLimiter:        rate.NewLimiter(getLimit, 1),
 	}
 
 	// TODO: does bucket exist?
@@ -55,18 +69,19 @@ func (p Plugin) svc() *s3.S3 {
 
 func (p Plugin) uploader() *s3manager.Uploader {
 	return s3manager.NewUploaderWithClient(p.svc(), func(u *s3manager.Uploader) {
-		u.PartSize = UploadPartSize
-		u.Concurrency = UploadConcurrency
+		u.PartSize = uploadPartSize
+		u.Concurrency = uploadConcurrency
 	})
 }
 
 func (p Plugin) downloader() *s3manager.Downloader {
 	return s3manager.NewDownloaderWithClient(p.svc(), func(d *s3manager.Downloader) {
-		d.PartSize = DownloadPartSize
-		d.Concurrency = DownloadConcurrency
+		d.PartSize = downloadPartSize
+		d.Concurrency = downloadConcurrency
 	})
 }
 
+// CreateCabinet will create a new cabinet in storage
 func (p Plugin) CreateCabinet() error {
 	params := &s3.CreateBucketInput{
 		Bucket: aws.String(p.Bucket), // Required
@@ -94,6 +109,7 @@ func (p Plugin) CreateCabinet() error {
 	return p.confirmBucketCreation()
 }
 
+// DeleteCabinet will delete an existing cabinet from storage
 func (p Plugin) DeleteCabinet() error {
 	params := &s3.DeleteBucketInput{
 		Bucket: aws.String(p.Bucket), // Required
@@ -113,42 +129,119 @@ func (p Plugin) DeleteCabinet() error {
 	return p.confirmBucketDeletion()
 }
 
+// List fetches keys from storage and translates them to entries, then feeds entries to channel
 func (p Plugin) List(prefix string, entries chan clob.Entry) error {
-	params := &s3.ListObjectsV2Input{
-		Bucket: aws.String(p.Bucket), // Required
-		// ContinuationToken: aws.String("Token"),
-		// Delimiter:         aws.String("Delimiter"),
-		// EncodingType:      aws.String("EncodingType"),
-		// FetchOwner:        aws.Bool(true),
-		// MaxKeys:           aws.Int64(1),
-		Prefix: aws.String(prefix),
-		// RequestPayer:      aws.String("RequestPayer"),
-		// StartAfter:        aws.String("StartAfter"),
+	var (
+		wg      sync.WaitGroup
+		objects = make(chan *s3.Object, downloadConcurrency)
+		params  = &s3.ListObjectsV2Input{
+			Bucket: aws.String(p.Bucket), // Required
+			// ContinuationToken: aws.String("Token"),
+			// Delimiter:         aws.String("Delimiter"),
+			EncodingType: aws.String("url"),
+			// FetchOwner:        aws.Bool(true),
+			// MaxKeys:           aws.Int64(1),
+			Prefix: aws.String(prefix),
+			// RequestPayer:      aws.String("RequestPayer"),
+			// StartAfter:        aws.String("StartAfter"),
+		}
+	)
+
+	for i := 0; i < downloadConcurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for object := range objects {
+				if header, err := p.head(object); err == nil {
+					entries <- makeEntry(object, header)
+				} else {
+					fmt.Println(err)
+				}
+			}
+		}()
 	}
 
+	time.Sleep(p.putListDelLimiter.Reserve().Delay())
 	err := p.svc().ListObjectsV2Pages(params, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
-		for _, o := range page.Contents {
-			fmt.Printf("%+v\n", o) // TODO: Test and update
-			// key := strings.Split(*o.Key, "/")
-			// entries <- clob.Entry{
-			// 	ParentID: key[0],
-			// 	ID:       key[1],
-			// 	// Metadata: , // TODO
-			// }
+		for _, object := range page.Contents {
+			objects <- object
 		}
 
+		time.Sleep(p.putListDelLimiter.Reserve().Delay())
 		return *page.IsTruncated // REVIEW: This may not be totally accurate at all times
 	})
+
+	close(objects)
+	wg.Wait()
 
 	return err
 }
 
-// Create new object in s3
-func (p Plugin) Create(e clob.Entry) error {
+func extractRuneHelper(str string) (r rune) {
+	for _, r = range str { // extracts first character to rune and returns
+		break
+	}
+	return
+}
+
+func makeEntry(object *s3.Object, head *s3.HeadObjectOutput) clob.Entry {
+	return clob.Entry{
+		Key:          *object.Key,
+		ParentKey:    *head.Metadata["x-amz-meta-parent-key"],
+		Name:         *head.Metadata["x-amz-meta-name"],
+		Size:         *object.Size,
+		LastModified: *object.LastModified,
+		Type:         extractRuneHelper(*head.Metadata["x-amz-meta-type"]),
+	}
+}
+
+func composeMetadata(e clob.Entry) (metadata map[string]*string) {
+	return map[string]*string{
+		"x-amz-meta-parent-key": aws.String(e.ParentKey),
+		"x-amz-meta-name":       aws.String(e.Name),
+		"x-amz-meta-type":       aws.String(fmt.Sprintf("%c", e.Type)),
+	}
+}
+
+func (p Plugin) head(object *s3.Object) (*s3.HeadObjectOutput, error) {
+	// for object := range objects {
+	params := &s3.HeadObjectInput{
+		Bucket: aws.String(p.Bucket), // Required
+		Key:    object.Key,           // Required
+		// IfMatch:              aws.String("IfMatch"),
+		// IfModifiedSince:      aws.Time(time.Now()),
+		// IfNoneMatch:          aws.String("IfNoneMatch"),
+		// IfUnmodifiedSince:    aws.Time(time.Now()),
+		// PartNumber:           aws.Int64(1),
+		// Range:                aws.String("Range"),
+		// RequestPayer:         aws.String("RequestPayer"),
+		// SSECustomerAlgorithm: aws.String("SSECustomerAlgorithm"),
+		// SSECustomerKey:       aws.String("SSECustomerKey"),
+		// SSECustomerKeyMD5:    aws.String("SSECustomerKeyMD5"),
+		// VersionId:            aws.String("ObjectVersionId"),
+	}
+
+	time.Sleep(p.getLimiter.Reserve().Delay())
+	resp, err := p.svc().HeadObject(params)
+	if err != nil {
+		// Print the error, cast err to awserr.Error to get the Code and
+		// Message from an error.
+		fmt.Println(err.Error())
+		return nil, err
+	}
+
+	// Pretty-print the response data.
+	fmt.Println(resp)
+
+	return resp, nil
+}
+
+// Upload object in s3
+func (p Plugin) Upload(e clob.Entry) error {
 	upParams := &s3manager.UploadInput{
 		Bucket:   aws.String(p.Bucket), // Required
-		Key:      aws.String(e.Key()),  // Required
-		Metadata: convMetaToAWS(e.Metadata),
+		Key:      aws.String(e.Key),    // Required
+		Metadata: composeMetadata(e),
 		Body:     e.Body,
 	}
 
@@ -162,17 +255,17 @@ func (p Plugin) Create(e clob.Entry) error {
 
 	// Pretty-print the response data.
 	fmt.Println(result)
-	return p.confirmObjectCreation(e.Key())
+	return p.confirmObjectCreation(e.Key)
 }
 
 // Rename updates the Name in metadata
 func (p Plugin) Rename(e clob.Entry, newName string) error {
-	e.Metadata["name"] = newName // Update Name
+	e.Name = newName // Update Name
 
 	params := &s3.CopyObjectInput{
 		Bucket:     aws.String(p.Bucket), // Required
-		CopySource: aws.String(e.Key()),  // Required
-		Key:        aws.String(e.Key()),  // Required
+		CopySource: aws.String(e.Key),    // Required
+		Key:        aws.String(e.Key),    // Required
 		// ACL:                            aws.String("ObjectCannedACL"),
 		// CacheControl:                   aws.String("CacheControl"),
 		// ContentDisposition:             aws.String("ContentDisposition"),
@@ -191,7 +284,7 @@ func (p Plugin) Rename(e clob.Entry, newName string) error {
 		// GrantRead:                      aws.String("GrantRead"),
 		// GrantReadACP:                   aws.String("GrantReadACP"),
 		// GrantWriteACP:                  aws.String("GrantWriteACP"),
-		Metadata:          convMetaToAWS(e.Metadata),
+		Metadata:          composeMetadata(e),
 		MetadataDirective: aws.String(s3.MetadataDirectiveReplace),
 		// RequestPayer:            aws.String("RequestPayer"),
 		// SSECustomerAlgorithm:    aws.String("SSECustomerAlgorithm"),
@@ -224,7 +317,7 @@ func (p Plugin) Update(e clob.Entry) error {
 func (p Plugin) Delete(e clob.Entry) error {
 	params := &s3.DeleteObjectInput{
 		Bucket: aws.String(p.Bucket), // Required
-		Key:    aws.String(e.Key()),  // Required
+		Key:    aws.String(e.Key),    // Required
 		// MFA:          aws.String("MFA"),
 		// RequestPayer: aws.String("RequestPayer"),
 		// VersionId:    aws.String("ObjectVersionId"),
@@ -240,14 +333,14 @@ func (p Plugin) Delete(e clob.Entry) error {
 
 	// Pretty-print the response data.
 	fmt.Println(resp)
-	return p.confirmObjectDeletion(e.Key())
+	return p.confirmObjectDeletion(e.Key)
 }
 
 // Download writes data from an entry to the provided writer
 func (p Plugin) Download(w io.WriterAt, e clob.Entry) error {
 	params := &s3.GetObjectInput{
 		Bucket: aws.String(p.Bucket), // Required
-		Key:    aws.String(e.Key()),  // Required
+		Key:    aws.String(e.Key),    // Required
 		// IfMatch:                    aws.String("IfMatch"),
 		// IfModifiedSince:            aws.Time(time.Now()),
 		// IfNoneMatch:                aws.String("IfNoneMatch"),
@@ -283,7 +376,7 @@ func (p Plugin) Download(w io.WriterAt, e clob.Entry) error {
 func (p Plugin) Copy(source clob.Entry, destinationKey string) error {
 	params := &s3.CopyObjectInput{
 		Bucket:     aws.String(p.Bucket),       // Required
-		CopySource: aws.String(source.Key()),   // Required
+		CopySource: aws.String(source.Key),     // Required
 		Key:        aws.String(destinationKey), // Required
 		// ACL:                            aws.String("ObjectCannedACL"),
 		// CacheControl:                   aws.String("CacheControl"),
@@ -356,22 +449,4 @@ func (p Plugin) confirmObjectDeletion(key string) error {
 		Key:    aws.String(key),
 	}
 	return p.svc().WaitUntilObjectNotExists(headObjectInput)
-}
-
-// convMetaToAWS converts entry metadata to aws metadata
-func convMetaToAWS(entryMeta map[string]string) map[string]*string {
-	awsMeta := make(map[string]*string)
-	for k, v := range entryMeta {
-		awsMeta[k] = aws.String(v)
-	}
-	return awsMeta
-}
-
-// convMetaToEntry converts aws metadata to entry metadata
-func convMetaToEntry(awsMeta map[string]*string) map[string]string {
-	entryMeta := make(map[string]string)
-	for k, v := range awsMeta {
-		entryMeta[k] = *v
-	}
-	return entryMeta
 }
