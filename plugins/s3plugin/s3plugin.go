@@ -195,9 +195,9 @@ func makeEntry(object *s3.Object, head *s3.HeadObjectOutput) clob.Entry {
 
 func composeMetadata(e clob.Entry) (metadata map[string]*string) {
 	return map[string]*string{
-		"x-amz-meta-parent-key": aws.String(e.ParentKey),
-		"x-amz-meta-name":       aws.String(e.Name),
-		"x-amz-meta-type":       aws.String(fmt.Sprintf("%c", e.Type)),
+		"parent-key": aws.String(e.ParentKey),
+		"name":       aws.String(e.Name),
+		"type":       aws.String(fmt.Sprintf("%c", e.Type)),
 	}
 }
 
