@@ -324,17 +324,14 @@ func (p Plugin) Delete(e clob.Entry) error {
 		// RequestPayer: aws.String("RequestPayer"),
 		// VersionId:    aws.String("ObjectVersionId"),
 	}
-	resp, err := p.svc().DeleteObject(params)
 
-	if err != nil {
+	if _, err := p.svc().DeleteObject(params); err != nil {
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
 		fmt.Println(err.Error())
 		return err
 	}
 
-	// Pretty-print the response data.
-	fmt.Println(resp)
 	return p.confirmObjectDeletion(e.Key)
 }
 
