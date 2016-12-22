@@ -60,20 +60,12 @@ var (
 	errParentDoesNotExist = errors.New("Parent doesn't exist")
 )
 
-func MakeCabinet(name string) *Cabinet {
+// New returns a new cabinet struct
+func New(name string) *Cabinet {
 	return &Cabinet{
 		Name:    name,
 		entries: make(map[string]clob.Entry),
 	}
-}
-
-func generateNewID() (newID string) {
-	b := make([]byte, sizeOfID)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-
-	return fmt.Sprintf("%x", b)
 }
 
 // CreateEntry receives an Entry without an ID, assigns an ID, and Adds
@@ -112,6 +104,7 @@ func (cab *Cabinet) CreateEntry(e clob.Entry) (clob.Entry, error) {
 	return e, nil
 }
 
+// AddEntry inserts an entry into the Cabinet
 func (cab *Cabinet) AddEntry(e clob.Entry) error {
 	if len(e.ID) == 0 {
 		return errNoID
@@ -128,6 +121,7 @@ func (cab *Cabinet) AddEntry(e clob.Entry) error {
 	return nil
 }
 
+// UpdateEntry updates an existing entry in the Cabinet
 func (cab *Cabinet) UpdateEntry(e clob.Entry) error {
 	cab.Lock()
 	defer cab.Unlock()
@@ -140,6 +134,7 @@ func (cab *Cabinet) UpdateEntry(e clob.Entry) error {
 	return nil
 }
 
+// DeleteEntry removes an existing entry from the cabinet
 func (cab *Cabinet) DeleteEntry(id string) error {
 	cab.Lock()
 	defer cab.Unlock()
@@ -148,6 +143,7 @@ func (cab *Cabinet) DeleteEntry(id string) error {
 	return nil
 }
 
+// GetEntry retrieves an existing entry from the cabinet
 func (cab *Cabinet) GetEntry(id string) (clob.Entry, error) {
 	cab.RLock()
 	defer cab.RUnlock()
@@ -158,4 +154,13 @@ func (cab *Cabinet) GetEntry(id string) (clob.Entry, error) {
 	}
 
 	return e, nil
+}
+
+func generateNewID() (newID string) {
+	b := make([]byte, sizeOfID)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+
+	return fmt.Sprintf("%x", b)
 }
