@@ -2,8 +2,6 @@ package s3plugin
 
 import (
 	"bytes"
-	"crypto/rand"
-	"fmt"
 	"log"
 	"os"
 	"testing"
@@ -18,6 +16,7 @@ const (
 	bucket  = "fcab-test-disk"
 	region  = "us-east-1"
 	rootKey = "00000000000000000000000000000000"
+	testKey = "fe6c582c42c6783085eb68afccf52fa6"
 )
 
 var (
@@ -47,13 +46,13 @@ func TestCreateBucket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Log("created", bucket)
+	t.Log("created bucket", bucket)
 }
 
 func TestUpload(t *testing.T) {
 	data := []byte("THIS IS ALL I NEED! A FISHY IN MY SOUL")
 	e := clob.Entry{
-		Key:          generateNewID(),
+		Key:          testKey,
 		ParentKey:    rootKey,
 		Name:         "fish.doc",
 		Size:         int64(len(data)),
@@ -65,21 +64,47 @@ func TestUpload(t *testing.T) {
 	if err := plugin.Upload(e); err != nil {
 		t.Fatal(err)
 	}
-	t.Log("uploaded", e.Name)
+	t.Log("uploaded key", testKey)
+}
+
+func TestList(t *testing.T) {
+	var (
+		entries    = make(chan clob.Entry)
+		done       = make(chan bool)
+		entryCount int
+	)
+
+	go func() {
+		defer close(done)
+		for entry := range entries {
+			entryCount++
+			t.Logf("%+v\n", entry)
+		}
+	}()
+
+	if err := plugin.List("", entries); err != nil {
+		t.Fatal(err)
+	}
+
+	close(entries)
+	<-done
+
+	if entryCount != 1 {
+		t.Fatal("expecting 1 entry, got", entryCount)
+	}
+	t.Log("listed successfully")
+}
+
+func TestDeleteObject(t *testing.T) {
+	if err := plugin.Delete(clob.Entry{Key: testKey}); err != nil {
+		t.Fatal(err)
+	}
+	t.Log("deleted key", testKey)
 }
 
 func TestDeleteBucket(t *testing.T) {
 	if err := plugin.DeleteCabinet(); err != nil {
 		t.Fatal(err)
 	}
-	t.Log("deleted", bucket)
-}
-
-func generateNewID() (newID string) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-
-	return fmt.Sprintf("%x", b)
+	t.Log("deleted bucket", bucket)
 }
