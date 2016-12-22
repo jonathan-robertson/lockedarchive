@@ -15,7 +15,7 @@ type Plugin interface {
 	DeleteCabinet() error
 	List() error
 	Download(clob.Entry) error
-	Create(clob.Entry) error
+	Upload(clob.Entry) error
 	Rename(clob.Entry, string) error
 	Update(clob.Entry) error
 	Delete(clob.Entry) error
@@ -72,7 +72,7 @@ func New(name string) *Cabinet {
 func (cab *Cabinet) CreateEntry(e clob.Entry) (clob.Entry, error) {
 
 	// Validate entry's fields
-	if len(e.ID) != 0 { // Verify id is empty
+	if len(e.Key) != 0 { // Verify id is empty
 		return e, errNotExpectingID
 	}
 
@@ -84,7 +84,7 @@ func (cab *Cabinet) CreateEntry(e clob.Entry) (clob.Entry, error) {
 	defer cab.Unlock()
 
 	// TODO: Verify parent exists
-	if _, ok := cab.entries[e.ParentID]; !ok {
+	if _, ok := cab.entries[e.ParentKey]; !ok {
 		return e, errParentDoesNotExist
 	}
 
@@ -96,8 +96,8 @@ func (cab *Cabinet) CreateEntry(e clob.Entry) (clob.Entry, error) {
 		}
 	}
 
-	e.ID = newID
-	cab.entries[e.ID] = e
+	e.Key = newID
+	cab.entries[e.Key] = e
 
 	// TODO: Upload object to storage provider?
 
@@ -106,18 +106,18 @@ func (cab *Cabinet) CreateEntry(e clob.Entry) (clob.Entry, error) {
 
 // AddEntry inserts an entry into the Cabinet
 func (cab *Cabinet) AddEntry(e clob.Entry) error {
-	if len(e.ID) == 0 {
+	if len(e.Key) == 0 {
 		return errNoID
 	}
 
 	cab.Lock()
 	defer cab.Unlock()
 
-	if _, ok := cab.entries[e.ID]; ok { // Expecting entry to not exist yet
+	if _, ok := cab.entries[e.Key]; ok { // Expecting entry to not exist yet
 		return errIdentifierInUse
 	}
 
-	cab.entries[e.ID] = e
+	cab.entries[e.Key] = e
 	return nil
 }
 
@@ -126,11 +126,11 @@ func (cab *Cabinet) UpdateEntry(e clob.Entry) error {
 	cab.Lock()
 	defer cab.Unlock()
 
-	if _, ok := cab.entries[e.ID]; !ok { // Expecting entry to exist already
+	if _, ok := cab.entries[e.Key]; !ok { // Expecting entry to exist already
 		return errEntryNotPresent
 	}
 
-	cab.entries[e.ID] = e
+	cab.entries[e.Key] = e
 	return nil
 }
 
