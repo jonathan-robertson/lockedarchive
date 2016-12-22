@@ -151,7 +151,9 @@ func (p Plugin) List(prefix string, entries chan clob.Entry) error {
 			defer wg.Done()
 			for object := range objects {
 				if header, err := p.head(object); err == nil {
-					entries <- makeEntry(object, header)
+					if entry, ok := makeEntry(object, header); ok {
+						entries <- entry
+					}
 				} else {
 					fmt.Println(err)
 				}
@@ -182,15 +184,20 @@ func extractRuneHelper(str string) (r rune) {
 	return
 }
 
-func makeEntry(object *s3.Object, head *s3.HeadObjectOutput) clob.Entry {
+func makeEntry(object *s3.Object, head *s3.HeadObjectOutput) (entry clob.Entry, success bool) {
+	if head.Metadata["Type"] == nil || head.Metadata["Parent-Key"] == nil || head.Metadata["Name"] == nil {
+		fmt.Printf("ERROR: Could not process as entry: object: %+v, header: %+v\n", object, head)
+		return
+	}
+
 	return clob.Entry{
 		Key:          *object.Key,
-		ParentKey:    *head.Metadata["x-amz-meta-parent-key"],
-		Name:         *head.Metadata["x-amz-meta-name"],
+		ParentKey:    *head.Metadata["Parent-Key"],
+		Name:         *head.Metadata["Name"],
 		Size:         *object.Size,
 		LastModified: *object.LastModified,
-		Type:         extractRuneHelper(*head.Metadata["x-amz-meta-type"]),
-	}
+		Type:         extractRuneHelper(*head.Metadata["Type"]),
+	}, true
 }
 
 func composeMetadata(e clob.Entry) (metadata map[string]*string) {
@@ -227,9 +234,6 @@ func (p Plugin) head(object *s3.Object) (*s3.HeadObjectOutput, error) {
 		fmt.Println(err.Error())
 		return nil, err
 	}
-
-	// Pretty-print the response data.
-	fmt.Println(resp)
 
 	return resp, nil
 }
