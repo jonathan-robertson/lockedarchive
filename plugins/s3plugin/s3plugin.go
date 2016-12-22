@@ -150,12 +150,12 @@ func (p Plugin) List(prefix string, entries chan clob.Entry) error {
 		go func() {
 			defer wg.Done()
 			for object := range objects {
-				if header, err := p.head(object); err == nil {
+				if header, err := p.head(object); err != nil {
+					fmt.Println(err)
+				} else {
 					if entry, ok := makeEntry(object, header); ok {
 						entries <- entry
 					}
-				} else {
-					fmt.Println(err)
 				}
 			}
 		}()
@@ -247,16 +247,13 @@ func (p Plugin) Upload(e clob.Entry) error {
 		Body:     e.Body,
 	}
 
-	result, err := p.uploader().Upload(upParams)
+	_, err := p.uploader().Upload(upParams)
 	if err != nil {
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
 		fmt.Println(err.Error())
 		return err
 	}
-
-	// Pretty-print the response data.
-	fmt.Println(result)
 	return p.confirmObjectCreation(e.Key)
 }
 
@@ -297,17 +294,13 @@ func (p Plugin) Rename(e clob.Entry, newName string) error {
 		// StorageClass:            aws.String("StorageClass"),
 		// WebsiteRedirectLocation: aws.String("WebsiteRedirectLocation"),
 	}
-	resp, err := p.svc().CopyObject(params)
 
-	if err != nil {
+	if _, err := p.svc().CopyObject(params); err != nil {
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
 		fmt.Println(err.Error())
 		return err
 	}
-
-	// Pretty-print the response data.
-	fmt.Println(resp)
 	return nil
 }
 
@@ -358,16 +351,13 @@ func (p Plugin) Download(w io.WriterAt, e clob.Entry) error {
 		// SSECustomerKeyMD5:          aws.String("SSECustomerKeyMD5"),
 		// VersionId:                  aws.String("ObjectVersionId"),
 	}
-	n, err := p.downloader().Download(w, params)
-	if err != nil {
+
+	if _, err := p.downloader().Download(w, params); err != nil {
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
 		fmt.Println(err.Error())
 		return err
 	}
-
-	// Pretty-print the response data.
-	fmt.Println(n, "bytes written")
 	return nil
 }
 
@@ -406,17 +396,13 @@ func (p Plugin) Copy(source clob.Entry, destinationKey string) error {
 		// StorageClass:            aws.String("StorageClass"),
 		// WebsiteRedirectLocation: aws.String("WebsiteRedirectLocation"),
 	}
-	resp, err := p.svc().CopyObject(params)
 
-	if err != nil {
+	if _, err := p.svc().CopyObject(params); err != nil {
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
 		fmt.Println(err.Error())
 		return err
 	}
-
-	// Pretty-print the response data.
-	fmt.Println(resp)
 	return p.confirmObjectCreation(destinationKey)
 }
 
