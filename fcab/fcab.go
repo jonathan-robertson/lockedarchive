@@ -44,9 +44,9 @@ const (
 	typeFile = '-'
 	typeDir  = 'd'
 
-	sizeOfID = 32
+	sizeOfKey = 16
 
-	rootID = "00000000000000000000000000000000"
+	rootKey = "00000000000000000000000000000000"
 )
 
 var (
@@ -157,7 +157,7 @@ func (cab *Cabinet) GetEntry(id string) (clob.Entry, error) {
 }
 
 func generateNewID() (newID string) {
-	b := make([]byte, sizeOfID)
+	b := make([]byte, sizeOfKey)
 	if _, err := rand.Read(b); err != nil {
 		panic(err)
 	}
