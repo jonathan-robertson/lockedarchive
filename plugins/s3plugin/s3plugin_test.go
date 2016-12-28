@@ -50,11 +50,11 @@ func TestCreateBucket(t *testing.T) {
 }
 
 func TestUpload(t *testing.T) {
-	data := []byte("THIS IS ALL I NEED! A FISHY IN MY SOUL")
+	data := []byte("This is all I need: a boomfish in my soul.")
 	e := clob.Entry{
 		Key:          testKey,
 		ParentKey:    rootKey,
-		Name:         "fish.doc",
+		Name:         "boom.txt",
 		Size:         int64(len(data)),
 		LastModified: time.Now(),
 		Type:         '-',
@@ -93,6 +93,30 @@ func TestList(t *testing.T) {
 		t.Fatal("expecting 1 entry, got", entryCount)
 	}
 	t.Log("listed successfully")
+}
+
+func TestRename(t *testing.T) {
+	var (
+		entries = make(chan clob.Entry)
+		done    = make(chan bool)
+	)
+
+	go func() {
+		defer close(done)
+		for entry := range entries {
+			if err := plugin.Rename(entry, "fish.txt"); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}()
+
+	if err := plugin.List("", entries); err != nil {
+		t.Fatal(err)
+	}
+
+	close(entries)
+	<-done
+
 }
 
 func TestDeleteObject(t *testing.T) {

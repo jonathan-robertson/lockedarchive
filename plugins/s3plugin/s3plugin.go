@@ -262,9 +262,9 @@ func (p Plugin) Rename(e clob.Entry, newName string) error {
 	e.Name = newName // Update Name
 
 	params := &s3.CopyObjectInput{
-		Bucket:     aws.String(p.Bucket), // Required
-		CopySource: aws.String(e.Key),    // Required
-		Key:        aws.String(e.Key),    // Required
+		Bucket:     aws.String(p.Bucket),               // Required
+		CopySource: aws.String(p.Bucket + "/" + e.Key), // Required
+		Key:        aws.String(e.Key),                  // Required
 		// ACL:                            aws.String("ObjectCannedACL"),
 		// CacheControl:                   aws.String("CacheControl"),
 		// ContentDisposition:             aws.String("ContentDisposition"),
@@ -364,9 +364,9 @@ func (p Plugin) Download(w io.WriterAt, e clob.Entry) error {
 // Copy duplicates the contents and metadata of one entry to a new key
 func (p Plugin) Copy(source clob.Entry, destinationKey string) error {
 	params := &s3.CopyObjectInput{
-		Bucket:     aws.String(p.Bucket),       // Required
-		CopySource: aws.String(source.Key),     // Required
-		Key:        aws.String(destinationKey), // Required
+		Bucket:     aws.String(p.Bucket),                    // Required
+		CopySource: aws.String(p.Bucket + "/" + source.Key), // Required
+		Key:        aws.String(destinationKey),              // Required
 		// ACL:                            aws.String("ObjectCannedACL"),
 		// CacheControl:                   aws.String("CacheControl"),
 		// ContentDisposition:             aws.String("ContentDisposition"),
