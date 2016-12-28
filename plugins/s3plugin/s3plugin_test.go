@@ -9,6 +9,8 @@ import (
 
 	"golang.org/x/time/rate"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/puddingfactory/filecabinet/clob"
 )
 
@@ -96,27 +98,41 @@ func TestList(t *testing.T) {
 }
 
 func TestRename(t *testing.T) {
-	var (
-		entries = make(chan clob.Entry)
-		done    = make(chan bool)
-	)
 
-	go func() {
-		defer close(done)
-		for entry := range entries {
-			if err := plugin.Rename(entry, "fish.txt"); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}()
+	// Fetch current metadata of key
+	head, err := plugin.head(testKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if head.Metadata["Name"] == nil {
+		t.Fatal("expected name, but head didn't have one")
+	}
 
-	if err := plugin.List("", entries); err != nil {
+	// Build entry based on returned data
+	entry, ok := makeEntry(&s3.Object{
+		Key:          aws.String(testKey),
+		Size:         aws.Int64(0),
+		LastModified: aws.Time(time.Now()),
+	}, head)
+	if !ok {
+		t.Fatal("expected entry, but couldn't make one")
+	}
+
+	// Update name
+	if err := plugin.Rename(entry, "fish.txt"); err != nil {
 		t.Fatal(err)
 	}
 
-	close(entries)
-	<-done
-
+	// Verify name-change
+	if head, err := plugin.head(testKey); err != nil {
+		t.Fatal(err)
+	} else if head.Metadata["Name"] == nil {
+		t.Fatal("expected name, but head didn't have one")
+	} else if *head.Metadata["Name"] != "fish.txt" {
+		t.Fatal("expected fish.txt, but got", *head.Metadata["Name"])
+	} else {
+		t.Log("rename successful")
+	}
 }
 
 func TestDeleteObject(t *testing.T) {
