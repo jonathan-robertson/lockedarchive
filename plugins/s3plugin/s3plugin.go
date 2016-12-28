@@ -257,10 +257,20 @@ func (p Plugin) Upload(e clob.Entry) error {
 	return p.confirmObjectCreation(e.Key)
 }
 
+// Move updates the ParentKey in metadata
+func (p Plugin) Move(e clob.Entry, newParent string) error {
+	e.ParentKey = newParent
+	return p.Update(e)
+}
+
 // Rename updates the Name in metadata
 func (p Plugin) Rename(e clob.Entry, newName string) error {
 	e.Name = newName // Update Name
+	return p.Update(e)
+}
 
+// Update pushes changes in metadata to the online object
+func (p Plugin) Update(e clob.Entry) error {
 	params := &s3.CopyObjectInput{
 		Bucket:     aws.String(p.Bucket),               // Required
 		CopySource: aws.String(p.Bucket + "/" + e.Key), // Required
@@ -301,10 +311,6 @@ func (p Plugin) Rename(e clob.Entry, newName string) error {
 		fmt.Println(err.Error())
 		return err
 	}
-	return nil
-}
-
-func (p Plugin) Update(e clob.Entry) error {
 	return nil
 }
 
