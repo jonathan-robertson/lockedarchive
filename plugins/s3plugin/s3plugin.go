@@ -150,7 +150,7 @@ func (p Plugin) List(prefix string, entries chan clob.Entry) error {
 		go func() {
 			defer wg.Done()
 			for object := range objects {
-				if header, err := p.head(object); err != nil {
+				if header, err := p.head(*object.Key); err != nil {
 					fmt.Println(err)
 				} else {
 					if entry, ok := makeEntry(object, header); ok {
@@ -208,11 +208,11 @@ func composeMetadata(e clob.Entry) (metadata map[string]*string) {
 	}
 }
 
-func (p Plugin) head(object *s3.Object) (*s3.HeadObjectOutput, error) {
+func (p Plugin) head(key string) (*s3.HeadObjectOutput, error) {
 	// for object := range objects {
 	params := &s3.HeadObjectInput{
 		Bucket: aws.String(p.Bucket), // Required
-		Key:    object.Key,           // Required
+		Key:    aws.String(key),      // Required
 		// IfMatch:              aws.String("IfMatch"),
 		// IfModifiedSince:      aws.Time(time.Now()),
 		// IfNoneMatch:          aws.String("IfNoneMatch"),
