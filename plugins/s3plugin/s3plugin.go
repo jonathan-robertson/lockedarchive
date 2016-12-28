@@ -16,6 +16,7 @@ import (
 	"github.com/puddingfactory/filecabinet/clob"
 )
 
+// Plugin represents the structure for s3 client
 type Plugin struct {
 	Bucket            string
 	region            string
