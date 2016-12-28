@@ -2,6 +2,7 @@ package s3plugin
 
 import (
 	"bytes"
+	"io/ioutil"
 	"log"
 	"os"
 	"testing"
@@ -22,7 +23,8 @@ const (
 )
 
 var (
-	plugin Plugin
+	plugin   Plugin
+	testBody = []byte("This is all I need: a boomfish in my soul.")
 )
 
 func init() {
@@ -52,15 +54,14 @@ func TestCreateBucket(t *testing.T) {
 }
 
 func TestUpload(t *testing.T) {
-	data := []byte("This is all I need: a boomfish in my soul.")
 	e := clob.Entry{
 		Key:          testKey,
 		ParentKey:    rootKey,
 		Name:         "boom.txt",
-		Size:         int64(len(data)),
+		Size:         int64(len(testBody)),
 		LastModified: time.Now(),
 		Type:         '-',
-		Body:         bytes.NewReader(data),
+		Body:         bytes.NewReader(testBody),
 	}
 
 	if err := plugin.Upload(e); err != nil {
@@ -132,6 +133,34 @@ func TestRename(t *testing.T) {
 		t.Fatal("expected fish.txt, but got", *head.Metadata["Name"])
 	} else {
 		t.Log("rename successful")
+	}
+}
+
+func TestDownload(t *testing.T) {
+	var (
+		filename = "test.txt"
+	)
+
+	// Download to file
+	file, err := os.Create(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := plugin.Download(file, clob.Entry{Key: testKey}); err != nil {
+		t.Fatal(err)
+	}
+	file.Close() // done writing
+
+	// Check file's contents
+	data, err := ioutil.ReadFile(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if bytes.Equal(data, testBody) {
+		t.Log("download successful")
+	} else {
+		t.Fatalf("expected \"%s\" but got \"%s\"", testBody, data)
 	}
 }
 
