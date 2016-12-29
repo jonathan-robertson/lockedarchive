@@ -7,6 +7,8 @@ import (
 	"io"
 	"sync"
 
+	log "github.com/Sirupsen/logrus"
+
 	"github.com/puddingfactory/filecabinet/clob"
 )
 
@@ -52,19 +54,47 @@ const (
 )
 
 var (
-	errIdentifierInUse    = errors.New("ID in use")
-	errEntryNotPresent    = errors.New("No entry at provided ID")
-	errNoID               = errors.New("No ID is assigned to this entry")
-	errNotExpectingID     = errors.New("ID detected on entry when not expecting one")
-	errParentDoesNotExist = errors.New("Parent doesn't exist")
+	errIdentifierInUse    = errors.New("key in use")
+	errEntryNotPresent    = errors.New("no entry at provided key")
+	errNoID               = errors.New("no key is assigned to this entry")
+	errNotExpectingID     = errors.New("key detected on entry when not expecting one")
+	errParentDoesNotExist = errors.New("parent key doesn't exist")
+	errNoPlugins          = errors.New("at least 1 plugin is required to call Open")
 )
 
-// New returns a new cabinet struct
-func New(name string) *Cabinet {
-	return &Cabinet{
-		Name:    name,
-		entries: make(map[string]clob.Entry),
+// Open returns a cabinet, if possible, complete with a loaded entries map
+func Open(name string, plugins []Plugin) (*Cabinet, error) {
+	if len(plugins) == 0 {
+		return nil, errNoPlugins
 	}
+
+	var (
+		entries = make(chan clob.Entry)
+		done    = make(chan bool)
+		cabinet = &Cabinet{
+			Name:    name,
+			entries: make(map[string]clob.Entry),
+		}
+	)
+
+	go func() {
+		defer close(done)
+		for entry := range entries {
+			// REVIEW: add logic here to protect against / detect collision
+			if err := cabinet.AddEntry(entry); err != nil {
+				log.WithFields(log.Fields{"err": err}).Error("trouble adding entry to cabinet during list")
+			}
+		}
+	}()
+
+	// REVIEW: maybe add logic here based on plugin cost
+	err := plugins[0].List("", entries)
+	close(entries)
+	if err != nil {
+		return nil, err
+	}
+
+	return cabinet, nil
 }
 
 // CreateEntry receives an Entry without an ID, assigns an ID, and Adds
