@@ -143,6 +143,13 @@ func TestDownload(t *testing.T) {
 
 	// Download to file
 	file, err := os.Create(filename)
+	if file != nil {
+		defer func() {
+			if err := os.Remove(filename); err != nil {
+				t.Fatal("unable to delete", filename, "once testing concluded")
+			}
+		}()
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
