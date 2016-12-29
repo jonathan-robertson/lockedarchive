@@ -54,10 +54,10 @@ const (
 )
 
 var (
-	errIdentifierInUse    = errors.New("key in use")
-	errEntryNotPresent    = errors.New("no entry at provided key")
-	errNoID               = errors.New("no key is assigned to this entry")
-	errNotExpectingID     = errors.New("key detected on entry when not expecting one")
+	errKeyInUse           = errors.New("key in use")
+	errNoKey              = errors.New("no key is assigned to this entry")
+	errNotExpectingKey    = errors.New("key detected on entry when not expecting one")
+	errEntryDoesNotExist  = errors.New("no entry at provided key")
 	errParentDoesNotExist = errors.New("parent key doesn't exist")
 	errNoPlugins          = errors.New("at least 1 plugin is required to call Open")
 )
@@ -71,7 +71,7 @@ func Open(name string, plugins []Plugin) (*Cabinet, error) {
 	var (
 		entries = make(chan clob.Entry)
 		done    = make(chan bool)
-		cabinet = &Cabinet{
+		cab     = &Cabinet{
 			Name:    name,
 			entries: make(map[string]clob.Entry),
 		}
@@ -81,7 +81,7 @@ func Open(name string, plugins []Plugin) (*Cabinet, error) {
 		defer close(done)
 		for entry := range entries {
 			// REVIEW: add logic here to protect against / detect collision
-			if err := cabinet.AddEntry(entry); err != nil {
+			if err := cab.MapEntry(entry); err != nil {
 				log.WithFields(log.Fields{"err": err}).Error("trouble adding entry to cabinet during list")
 			}
 		}
@@ -94,15 +94,15 @@ func Open(name string, plugins []Plugin) (*Cabinet, error) {
 		return nil, err
 	}
 
-	return cabinet, nil
+	return cab, nil
 }
 
-// CreateEntry receives an Entry without an ID, assigns an ID, and Adds
+// CreateEntry receives an Entry without key, assigns an key, and Adds
 func (cab *Cabinet) CreateEntry(e clob.Entry) (clob.Entry, error) {
 
 	// Validate entry's fields
-	if len(e.Key) != 0 { // Verify id is empty
-		return e, errNotExpectingID
+	if len(e.Key) != 0 { // Verify key is empty
+		return e, errNotExpectingKey
 	}
 
 	// TODO: Verify Name
@@ -117,33 +117,38 @@ func (cab *Cabinet) CreateEntry(e clob.Entry) (clob.Entry, error) {
 		return e, errParentDoesNotExist
 	}
 
-	var newID string
+	var newKey string
 	for {
-		newID = generateNewID()
-		if _, ok := cab.entries[newID]; !ok {
+		newKey = generateNewID()
+		if _, ok := cab.entries[newKey]; !ok {
 			break
 		}
 	}
 
-	e.Key = newID
+	e.Key = newKey
 	cab.entries[e.Key] = e
 
-	// TODO: Upload object to storage provider?
+	// Upload entry to each plugin
+	for _, plugin := range cab.plugins {
+		if err := plugin.Upload(e); err != nil {
+			return e, err
+		}
+	}
 
 	return e, nil
 }
 
-// AddEntry inserts an entry into the Cabinet
-func (cab *Cabinet) AddEntry(e clob.Entry) error {
+// MapEntry safely inserts an entry into the Cabinet's map
+func (cab *Cabinet) MapEntry(e clob.Entry) error {
 	if len(e.Key) == 0 {
-		return errNoID
+		return errNoKey
 	}
 
 	cab.Lock()
 	defer cab.Unlock()
 
 	if _, ok := cab.entries[e.Key]; ok { // Expecting entry to not exist yet
-		return errIdentifierInUse
+		return errKeyInUse
 	}
 
 	cab.entries[e.Key] = e
@@ -156,30 +161,42 @@ func (cab *Cabinet) UpdateEntry(e clob.Entry) error {
 	defer cab.Unlock()
 
 	if _, ok := cab.entries[e.Key]; !ok { // Expecting entry to exist already
-		return errEntryNotPresent
+		return errEntryDoesNotExist
 	}
+
+	// REVIEW: determine what changed and push that kind of change to plugins
 
 	cab.entries[e.Key] = e
 	return nil
 }
 
 // DeleteEntry removes an existing entry from the cabinet
-func (cab *Cabinet) DeleteEntry(id string) error {
-	cab.Lock()
-	defer cab.Unlock()
+func (cab *Cabinet) DeleteEntry(key string) error {
+	e, err := cab.GetEntry(key)
+	if err != nil {
+		return err
+	}
 
-	delete(cab.entries, id)
+	cab.Lock()
+	delete(cab.entries, key)
+	cab.Unlock()
+
+	for _, plugin := range cab.plugins {
+		if err := plugin.Delete(e); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 // GetEntry retrieves an existing entry from the cabinet
-func (cab *Cabinet) GetEntry(id string) (clob.Entry, error) {
+func (cab *Cabinet) GetEntry(key string) (clob.Entry, error) {
 	cab.RLock()
 	defer cab.RUnlock()
 
-	e, ok := cab.entries[id]
+	e, ok := cab.entries[key]
 	if !ok {
-		return e, errEntryNotPresent
+		return e, errEntryDoesNotExist
 	}
 
 	return e, nil
