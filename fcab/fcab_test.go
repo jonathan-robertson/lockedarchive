@@ -1,6 +1,15 @@
 package fcab
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/puddingfactory/filecabinet/plugins/s3plugin"
+)
+
+var (
+	// Compliance check
+	_ Plugin = (*s3plugin.Plugin)(nil)
+)
 
 func TestGenNewID(t *testing.T) {
 	t.Log(generateNewID())

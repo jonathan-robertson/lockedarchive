@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 
 	"github.com/puddingfactory/filecabinet/clob"
@@ -13,13 +14,14 @@ import (
 type Plugin interface {
 	CreateCabinet() error
 	DeleteCabinet() error
-	List() error
-	Download(clob.Entry) error
+	List(string, chan clob.Entry) error
+	Download(io.WriterAt, clob.Entry) error
 	Upload(clob.Entry) error
 	Rename(clob.Entry, string) error
+	Move(clob.Entry, string) error
 	Update(clob.Entry) error
 	Delete(clob.Entry) error
-	Copy(clob.Entry, clob.Entry) error
+	Copy(clob.Entry, string) error
 }
 
 // Cabinet represents a collection of entries, symbolizing a cloud container/disk/bucket
@@ -50,9 +52,6 @@ const (
 )
 
 var (
-	// _ entry = (*File)(nil)
-	// _ entry = (*Folder)(nil)
-
 	errIdentifierInUse    = errors.New("ID in use")
 	errEntryNotPresent    = errors.New("No entry at provided ID")
 	errNoID               = errors.New("No ID is assigned to this entry")
