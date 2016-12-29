@@ -16,9 +16,9 @@ researching | Search document names **and contents** to find information without
 Status | Object Storage
 :---: | ---
 in progress | Amazon S3
-researching | Backblaze B2
-researching | Google Cloud Storage
-maybe one day? | Rackspace Cloud Files
+considering | Backblaze B2
+considering | Google Cloud Storage
+considering | Rackspace Cloud Files
 
 # Documentation Licensing
 The content of this document and all other documents within this repository are licensed under the Creative Commons Attribution 3.0 License.
