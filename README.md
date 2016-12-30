@@ -1,4 +1,4 @@
-# File Cabinet
+# File Cabinet [![Apache-2.0 License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/puddingfactory/filecabinet/blob/master/LICENSE.md)
 This project is meant for storing/archiving family information in a safe way: Documents, Tax forms, scans of important licenses, etc.
 
 Due to the sensitive nature of this kind of information, encryption is paramount and will be applied before data is uploaded through the internet (even though https is being used).
