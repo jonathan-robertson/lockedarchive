@@ -7,8 +7,6 @@ import (
 	"io"
 	"sync"
 
-	log "github.com/Sirupsen/logrus"
-
 	"github.com/puddingfactory/filecabinet/clob"
 )
 
@@ -30,7 +28,7 @@ type Plugin interface {
 type Cabinet struct {
 	Name    string                // aws bucket
 	entries map[string]clob.Entry // map[key]clob.Entry
-	plugins []Plugin
+	plugin  Plugin
 	sync.RWMutex
 }
 
@@ -62,12 +60,8 @@ var (
 	errNoPlugins          = errors.New("at least 1 plugin is required to call Open")
 )
 
-// Open returns a cabinet, if possible, complete with a loaded entries map
-func Open(name string, plugins []Plugin) (*Cabinet, error) {
-	if len(plugins) == 0 {
-		return nil, errNoPlugins // don't proceed if we haven't provided at least 1 plugin
-	}
-
+// OpenCabinet returns a cabinet, if possible, complete with a loaded entries map; LOCKS
+func OpenCabinet(name string, plugin Plugin) (*Cabinet, error) {
 	cab := &Cabinet{
 		Name:    name,
 		entries: make(map[string]clob.Entry),
@@ -76,121 +70,109 @@ func Open(name string, plugins []Plugin) (*Cabinet, error) {
 	done := make(chan bool)
 
 	go func() {
+		cab.Lock()
+		defer cab.Unlock()
 		defer close(done)
 		for entry := range entries {
-			if err := cab.MapEntry(entry); err != nil {
-				log.WithFields(log.Fields{"err": err}).Error("trouble adding entry to cabinet during list")
-			}
+			cab.entries[entry.Key] = entry
 		}
 	}()
 
-	err := plugins[0].List("", entries) // REVIEW: maybe add logic here to choose which plugin to run based on Listing/Get cost
-	close(entries)                      // indicate no new entries will be added
-	<-done                              // wait for mapping to complete
-	return cab, err                     // return err if one exists
+	// REVIEW: maybe add logic here to choose between multiple plugins based on Listing/Get cost
+	err := plugin.List("", entries)
+
+	close(entries)  // indicate no new entries will be added
+	<-done          // wait for mapping to complete
+	return cab, err // return err if one exists
 }
 
-// MapEntry safely inserts an entry into the Cabinet's map
-func (cab *Cabinet) MapEntry(e clob.Entry) error {
-	if len(e.Key) == 0 {
-		return errNoKey
+// assignKey generates and assigns a new, unused key to entry; ASSUMES LOCKED
+func (cab *Cabinet) assignKey(e clob.Entry) clob.Entry {
+	newKey := rootKey
+	for cab.keyExists(newKey) {
+		newKey = generateKey()
 	}
 
-	cab.Lock()
-	defer cab.Unlock()
-	cab.entries[e.Key] = e
-	return nil
+	e.Key = newKey // set new, unused key to entry
+	return e
 }
 
-// CreateEntry receives an Entry without key, assigns an key, and Adds
-func (cab *Cabinet) CreateEntry(e clob.Entry) (clob.Entry, error) {
+// keyExists returns existence of key in entries or if key is the root key; ASSUMES R/LOCKED
+func (cab *Cabinet) keyExists(key string) (exists bool) {
+	_, ok := cab.entries[key]
+	return ok || key == rootKey
+}
 
-	// Validate entry's fields
-	if len(e.Key) != 0 { // Verify key is empty
-		return e, errNotExpectingKey
-	}
-
-	// TODO: Verify Name
-	// TODO: Verify Metadata
-	// TODO: Verify EntryType
-
+// upsert updates or inserts entry safely into the map; LOCKS
+func (cab *Cabinet) upsert(e clob.Entry) (clob.Entry, error) {
 	cab.Lock()
 	defer cab.Unlock()
 
-	// TODO: Verify parent exists
-	if _, ok := cab.entries[e.ParentKey]; !ok {
+	// Verify parent exists
+	if !cab.keyExists(e.ParentKey) {
 		return e, errParentDoesNotExist
 	}
 
-	var newKey string
-	for {
-		newKey = generateNewID()
-		if _, ok := cab.entries[newKey]; !ok {
-			break
-		}
+	// Generate new key if necessary and assign to
+	if e.Key == "" {
+		e = cab.assignKey(e)
 	}
 
-	e.Key = newKey
+	// Assign entry to entries
 	cab.entries[e.Key] = e
-
-	// Upload entry to each plugin
-	for _, plugin := range cab.plugins {
-		if err := plugin.Upload(e); err != nil {
-			return e, err
-		}
-	}
 
 	return e, nil
 }
 
-// UpdateEntry updates an existing entry in the Cabinet
-func (cab *Cabinet) UpdateEntry(e clob.Entry) error {
-	cab.Lock()
-	defer cab.Unlock()
+// UploadEntry receives an Entry without key, assigns key, and updates map
+func (cab *Cabinet) UploadEntry(e clob.Entry) (clob.Entry, error) {
 
-	if _, ok := cab.entries[e.Key]; !ok { // Expecting entry to exist already
-		return errEntryDoesNotExist
+	// TODO: Verify Name
+	// TODO: Verify EntryType
+	// TODO: Verify Metadata
+
+	// Update local map
+	e, err := cab.upsert(e)
+	if err != nil {
+		return e, err
 	}
 
-	// REVIEW: determine what changed and push that kind of change to plugins
+	return e, cab.plugin.Upload(e) // REVIEW: retry logic to be handled in plugin?
+}
 
-	cab.entries[e.Key] = e
-	return nil
+// DownloadEntry saves an entry to the local filesystem
+func (cab *Cabinet) DownloadEntry(e clob.Entry, filename string) error {
+	return cab.DownloadEntry(e, filename) // REVIEW: should have intermediate step for viewing file contents
 }
 
 // DeleteEntry removes an existing entry from the cabinet
-func (cab *Cabinet) DeleteEntry(key string) error {
-	e, err := cab.GetEntry(key)
-	if err != nil {
-		return err
-	}
+func (cab *Cabinet) DeleteEntry(e clob.Entry) error {
 
+	// Remove from local map
 	cab.Lock()
-	delete(cab.entries, key)
+	delete(cab.entries, e.Key)
 	cab.Unlock()
 
-	for _, plugin := range cab.plugins {
-		if err := plugin.Delete(e); err != nil {
-			return err
-		}
-	}
-	return nil
+	// Delete from plugin
+	return cab.plugin.Delete(e)
 }
 
-// GetEntry retrieves an existing entry from the cabinet
-func (cab *Cabinet) GetEntry(key string) (clob.Entry, error) {
+// LookupEntry retrieves an existing entry from the cabinet
+func (cab *Cabinet) LookupEntry(key string) (clob.Entry, error) {
 	cab.RLock()
 	defer cab.RUnlock()
 
 	e, ok := cab.entries[key]
 	if !ok {
+		// REVIEW: try fetching this key from plugin?
+
 		return e, errEntryDoesNotExist
 	}
 
 	return e, nil
 }
 
-func generateNewID() (newID string) {
+func generateKey() (newKey string) {
 	b := make([]byte, sizeOfKey)
 	if _, err := rand.Read(b); err != nil {
 		panic(err)
