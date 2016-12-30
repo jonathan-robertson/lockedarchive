@@ -65,7 +65,7 @@ var (
 // Open returns a cabinet, if possible, complete with a loaded entries map
 func Open(name string, plugins []Plugin) (*Cabinet, error) {
 	if len(plugins) == 0 {
-		return nil, errNoPlugins
+		return nil, errNoPlugins // don't proceed if we haven't provided at least 1 plugin
 	}
 
 	var (
@@ -80,21 +80,20 @@ func Open(name string, plugins []Plugin) (*Cabinet, error) {
 	go func() {
 		defer close(done)
 		for entry := range entries {
+
 			// REVIEW: add logic here to protect against / detect collision
+
 			if err := cab.MapEntry(entry); err != nil {
 				log.WithFields(log.Fields{"err": err}).Error("trouble adding entry to cabinet during list")
 			}
 		}
 	}()
 
-	// REVIEW: maybe add logic here based on plugin cost
+	// REVIEW: maybe add logic here to choose which plugin to run based on Listing/Get cost
 	err := plugins[0].List("", entries)
-	close(entries)
-	if err != nil {
-		return nil, err
-	}
-
-	return cab, nil
+	close(entries)  // indicate no new entries will be added
+	<-done          // wait for mapping to complete
+	return cab, err // return err if one exists
 }
 
 // CreateEntry receives an Entry without key, assigns an key, and Adds
