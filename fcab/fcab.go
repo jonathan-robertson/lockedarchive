@@ -29,7 +29,7 @@ type Plugin interface {
 // Cabinet represents a collection of entries, symbolizing a cloud container/disk/bucket
 type Cabinet struct {
 	Name    string                // aws bucket
-	entries map[string]clob.Entry // map[ID]clob.Entry
+	entries map[string]clob.Entry // map[key]clob.Entry
 	plugins []Plugin
 	sync.RWMutex
 }
@@ -68,32 +68,38 @@ func Open(name string, plugins []Plugin) (*Cabinet, error) {
 		return nil, errNoPlugins // don't proceed if we haven't provided at least 1 plugin
 	}
 
-	var (
-		entries = make(chan clob.Entry)
-		done    = make(chan bool)
-		cab     = &Cabinet{
-			Name:    name,
-			entries: make(map[string]clob.Entry),
-		}
-	)
+	cab := &Cabinet{
+		Name:    name,
+		entries: make(map[string]clob.Entry),
+	}
+	entries := make(chan clob.Entry)
+	done := make(chan bool)
 
 	go func() {
 		defer close(done)
 		for entry := range entries {
-
-			// REVIEW: add logic here to protect against / detect collision
-
 			if err := cab.MapEntry(entry); err != nil {
 				log.WithFields(log.Fields{"err": err}).Error("trouble adding entry to cabinet during list")
 			}
 		}
 	}()
 
-	// REVIEW: maybe add logic here to choose which plugin to run based on Listing/Get cost
-	err := plugins[0].List("", entries)
-	close(entries)  // indicate no new entries will be added
-	<-done          // wait for mapping to complete
-	return cab, err // return err if one exists
+	err := plugins[0].List("", entries) // REVIEW: maybe add logic here to choose which plugin to run based on Listing/Get cost
+	close(entries)                      // indicate no new entries will be added
+	<-done                              // wait for mapping to complete
+	return cab, err                     // return err if one exists
+}
+
+// MapEntry safely inserts an entry into the Cabinet's map
+func (cab *Cabinet) MapEntry(e clob.Entry) error {
+	if len(e.Key) == 0 {
+		return errNoKey
+	}
+
+	cab.Lock()
+	defer cab.Unlock()
+	cab.entries[e.Key] = e
+	return nil
 }
 
 // CreateEntry receives an Entry without key, assigns an key, and Adds
@@ -135,23 +141,6 @@ func (cab *Cabinet) CreateEntry(e clob.Entry) (clob.Entry, error) {
 	}
 
 	return e, nil
-}
-
-// MapEntry safely inserts an entry into the Cabinet's map
-func (cab *Cabinet) MapEntry(e clob.Entry) error {
-	if len(e.Key) == 0 {
-		return errNoKey
-	}
-
-	cab.Lock()
-	defer cab.Unlock()
-
-	if _, ok := cab.entries[e.Key]; ok { // Expecting entry to not exist yet
-		return errKeyInUse
-	}
-
-	cab.entries[e.Key] = e
-	return nil
 }
 
 // UpdateEntry updates an existing entry in the Cabinet
