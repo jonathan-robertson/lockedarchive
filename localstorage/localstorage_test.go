@@ -54,7 +54,22 @@ func TestRememberEntry(t *testing.T) {
 	if err := cache.RememberEntry(e); err != nil {
 		t.Fatal(err)
 	}
-	t.Log("entry with file stats and file data remembered by cache")
+	t.Logf("entry with file stats and file data remembered by cache\n%+v\n", e)
+}
+
+func TestRecallEntry(t *testing.T) {
+	e, success, err := cache.RecallEntry(testEntry.Key)
+	if err != nil {
+		t.Fatal(err)
+	} else if !success {
+		t.Fatal("no entry was found at", testEntry.Key)
+	}
+
+	if e.Type != testEntry.Type {
+		t.Fatal("types do not match")
+	}
+
+	t.Logf("entry retrieved\n%+v\n", e)
 }
 
 func TestForgetEntry(t *testing.T) {
