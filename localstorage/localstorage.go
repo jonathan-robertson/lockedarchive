@@ -2,6 +2,8 @@ package localstorage
 
 import (
 	"database/sql"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -51,6 +53,11 @@ const (
 	SELECT * FROM entries
 	WHERE key = ?;`
 
+	stmtUpdateEntryViaKey = `
+	UPDATE entries
+	SET %s = ?
+	WHERE key = ?;`
+
 	cacheFilename  = "cache.db"
 	macDefaultPath = "Library/Caches/com.puddingfactory.filecabinet" // TODO: base dir off file system and offer user way to modify
 	// winDefaultPath = "\\ProgramData\\puddingfactory\\filecabinet\\"
@@ -60,6 +67,9 @@ const (
 var (
 	cacheRoot             = "Cache/"
 	cacheMode os.FileMode = 0700
+
+	errNoRowsChanged = errors.New("no rows changed during operation")
+	errNoEntry       = errors.New("no entry found at provided key")
 )
 
 // New opens or creates, opens, and returns the cache database
@@ -93,9 +103,8 @@ func (c Cache) RecallEntry(key string) (e clob.Entry, success bool, err error) {
 }
 
 // RememberEntry records the entry's file and metadata to cache
-// REVIEW: DOES NOT WORK IF ENTRY ALREADY EXISTS! (should approach as upsert instead)
 func (c Cache) RememberEntry(e clob.Entry) (err error) {
-	if err = c.insertEntry(e); err == nil && e.Body != nil {
+	if err = c.upsertEntry(e); err == nil && e.Body != nil {
 		if cacheFile, err := os.Create(filepath.Join(cacheRoot, c.Cabinet, e.Key)); err == nil {
 			defer e.Body.Close()
 			defer cacheFile.Close()
@@ -162,11 +171,40 @@ func (c Cache) selectEntry(key string) (e clob.Entry, success bool, err error) {
 	return e, e.Key == key, err
 }
 
+func (c Cache) upsertEntry(e clob.Entry) (err error) {
+	if err = c.insertEntry(e); err != nil {
+		err = c.updateEntry(e)
+	}
+	return
+}
+
+func (c Cache) updateEntry(e clob.Entry) (err error) {
+	if db, err := c.open(); err == nil {
+		defer db.Close()
+
+		// Try fetching existing entry
+		if existingEntry, exists, err := c.selectEntry(e.Key); exists && err == nil {
+			cols, vals := compareEntries(existingEntry, e)
+			for i, col := range cols {
+				if _, err = db.Exec(fmt.Sprintf(stmtUpdateEntryViaKey, col), vals[i], e.Key); err != nil {
+					return err
+				}
+			}
+		} else if err != nil {
+			return err
+		} else if !exists {
+			return errNoEntry
+		}
+	}
+	return
+}
+
 func (c Cache) insertEntry(e clob.Entry) (err error) {
 	if db, err := c.open(); err == nil {
 		defer db.Close()
+		var result sql.Result
 		if e.Body == nil {
-			_, err = db.Exec(
+			result, err = db.Exec(
 				stmtInsertEntryBase,
 				e.Key,
 				e.ParentKey,
@@ -174,7 +212,7 @@ func (c Cache) insertEntry(e clob.Entry) (err error) {
 				e.Type,
 			)
 		} else {
-			_, err = db.Exec(
+			result, err = db.Exec(
 				stmtInsertEntryComplete,
 				e.Key,
 				e.ParentKey,
@@ -183,6 +221,14 @@ func (c Cache) insertEntry(e clob.Entry) (err error) {
 				e.Size,
 				e.LastModified.Unix(),
 			)
+		}
+		if err != nil {
+			return err
+		}
+
+		var num int64
+		if num, err = result.RowsAffected(); err == nil && num == 0 {
+			err = errNoRowsChanged
 		}
 	}
 	return err
@@ -210,6 +256,35 @@ func init() {
 	default:
 		log.Fatal(runtime.GOOS, "is not supported")
 	}
+}
+
+func compareEntries(existing, new clob.Entry) (columns []string, values []interface{}) {
+	if existing.ParentKey != new.ParentKey {
+		columns = append(columns, "parent_key")
+		values = append(values, new.ParentKey)
+	}
+
+	if existing.Name != new.Name {
+		columns = append(columns, "name")
+		values = append(values, new.Name)
+	}
+
+	if existing.Type != new.Type {
+		columns = append(columns, "type")
+		values = append(values, new.Type)
+	}
+
+	if existing.Size != new.Size {
+		columns = append(columns, "size")
+		values = append(values, new.Size)
+	}
+
+	if existing.LastModified != new.LastModified {
+		columns = append(columns, "last_modified")
+		values = append(values, new.LastModified)
+	}
+
+	return
 }
 
 func deleteFileIfExists(filename string) error {
