@@ -14,6 +14,8 @@ import (
 
 	"io"
 
+	"time"
+
 	"github.com/mitchellh/go-homedir"
 )
 
@@ -25,11 +27,11 @@ type Cache struct {
 const (
 	stmtCreateTables = `
 	CREATE TABLE entries(
-        key STRING NOT NULL PRIMARY KEY,
-        parent_key STRING NOT NULL,
-        name STRING NOT NULL,
-        type CHARACTER(1) NOT NULL,
-        size UNSIGNED BIG INT,
+        key TEXT NOT NULL PRIMARY KEY,
+        parent_key TEXT NOT NULL,
+        name TEXT NOT NULL,
+        type CHAR(1) NOT NULL,
+        size INTEGER,
         last_modified INTEGER
     );`
 
@@ -44,6 +46,10 @@ const (
 	stmtInsertEntryComplete = `
 	INSERT INTO entries
 	VALUES(?, ?, ?, ?, ?, ?);`
+
+	stmtSelectEntryViaKey = `
+	SELECT * FROM entries
+	WHERE key = ?;`
 
 	cacheFilename  = "cache.db"
 	macDefaultPath = "Library/Caches/com.puddingfactory.filecabinet" // TODO: base dir off file system and offer user way to modify
@@ -74,7 +80,20 @@ func New(cabinet string) (c Cache, err error) {
 	return
 }
 
+// RecallEntry returns the entry (including its data file if cached)
+func (c Cache) RecallEntry(key string) (e clob.Entry, success bool, err error) {
+	if e, success, err = c.selectEntry(key); err == nil && success {
+		if file, err := os.Open(filepath.Join(cacheRoot, c.Cabinet, key)); err == nil {
+			e.Body = file // link file, ready for reading
+		} else if os.IsNotExist(err) {
+			err = nil // ignore error if the file just doesn't happen to exist
+		}
+	}
+	return
+}
+
 // RememberEntry records the entry's file and metadata to cache
+// REVIEW: DOES NOT WORK IF ENTRY ALREADY EXISTS! (should approach as upsert instead)
 func (c Cache) RememberEntry(e clob.Entry) (err error) {
 	if err = c.insertEntry(e); err == nil && e.Body != nil {
 		if cacheFile, err := os.Create(filepath.Join(cacheRoot, c.Cabinet, e.Key)); err == nil {
@@ -119,6 +138,30 @@ func (c Cache) open() (*sql.DB, error) {
 	return sql.Open("sqlite3", c.filename())
 }
 
+func (c Cache) selectEntry(key string) (e clob.Entry, success bool, err error) {
+	if db, err := c.open(); err == nil {
+		defer db.Close()
+		row := db.QueryRow(stmtSelectEntryViaKey, key)
+
+		var size, unixTimestamp int64
+		err = row.Scan(
+			&e.Key,
+			&e.ParentKey,
+			&e.Name,
+			&e.Type,
+			&size,
+			&unixTimestamp,
+		)
+		if size != 0 {
+			e.Size = size
+		}
+		if unixTimestamp != 0 {
+			e.LastModified = time.Unix(unixTimestamp, 0)
+		}
+	}
+	return e, e.Key == key, err
+}
+
 func (c Cache) insertEntry(e clob.Entry) (err error) {
 	if db, err := c.open(); err == nil {
 		defer db.Close()
@@ -138,7 +181,7 @@ func (c Cache) insertEntry(e clob.Entry) (err error) {
 				e.Name,
 				e.Type,
 				e.Size,
-				e.LastModified,
+				e.LastModified.Unix(),
 			)
 		}
 	}
