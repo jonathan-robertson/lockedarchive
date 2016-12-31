@@ -26,6 +26,8 @@ func TestNew(t *testing.T) {
 	if cache, err = New(testCab); err != nil {
 		t.Fatal(err)
 	}
+
+	t.Log("cache initialized")
 }
 
 func TestRememberEntry(t *testing.T) {
@@ -35,11 +37,13 @@ func TestRememberEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Log("source file opened")
 
 	fileInfo, err := file.Stat()
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Log("stats received from file")
 
 	e := testEntry // copy
 	e.Name = filename
@@ -50,10 +54,12 @@ func TestRememberEntry(t *testing.T) {
 	if err := cache.RememberEntry(e); err != nil {
 		t.Fatal(err)
 	}
+	t.Log("entry with file stats and file data remembered by cache")
 }
 
 func TestForgetEntry(t *testing.T) {
 	if err := cache.ForgetEntry(clob.Entry{Key: testEntry.Key}); err != nil {
 		t.Fatal(err)
 	}
+	t.Log("entry and file data forgotten by cache")
 }
