@@ -12,6 +12,8 @@ import (
 
 	"github.com/puddingfactory/filecabinet/clob"
 
+	"io"
+
 	"github.com/mitchellh/go-homedir"
 )
 
@@ -50,7 +52,8 @@ const (
 )
 
 var (
-	cacheRoot = "Cache/"
+	cacheRoot             = "Cache/"
+	cacheMode os.FileMode = 0700
 )
 
 // New opens or creates, opens, and returns the cache database
@@ -71,6 +74,18 @@ func New(cabinet string) (c Cache, err error) {
 	return
 }
 
+// RememberEntry records the entry's file and metadata to cache
+func (c Cache) RememberEntry(e clob.Entry) (err error) {
+	if err = c.insertEntry(e); err == nil && e.Body != nil {
+		if cacheFile, err := os.Create(filepath.Join(cacheRoot, c.Cabinet, e.Key)); err == nil {
+			defer e.Body.Close()
+			defer cacheFile.Close()
+			_, err = io.Copy(cacheFile, e.Body)
+		}
+	}
+	return
+}
+
 // ForgetEntry purges the entry's cache data and info from db
 func (c Cache) ForgetEntry(e clob.Entry) (err error) {
 	if err = deleteFileIfExists(filepath.Join(cacheRoot, c.Cabinet, e.Key)); err == nil {
@@ -82,7 +97,7 @@ func (c Cache) ForgetEntry(e clob.Entry) (err error) {
 func (c Cache) init() (err error) {
 	// Verify that cache can be opened
 
-	if err = os.MkdirAll(filepath.Join(cacheRoot, c.Cabinet), 0700); err != nil {
+	if err = os.MkdirAll(filepath.Join(cacheRoot, c.Cabinet), cacheMode); err != nil {
 		return
 	}
 
@@ -102,6 +117,32 @@ func (c Cache) filename() string {
 
 func (c Cache) open() (*sql.DB, error) {
 	return sql.Open("sqlite3", c.filename())
+}
+
+func (c Cache) insertEntry(e clob.Entry) (err error) {
+	if db, err := c.open(); err == nil {
+		defer db.Close()
+		if e.Body == nil {
+			_, err = db.Exec(
+				stmtInsertEntryBase,
+				e.Key,
+				e.ParentKey,
+				e.Name,
+				e.Type,
+			)
+		} else {
+			_, err = db.Exec(
+				stmtInsertEntryComplete,
+				e.Key,
+				e.ParentKey,
+				e.Name,
+				e.Type,
+				e.Size,
+				e.LastModified,
+			)
+		}
+	}
+	return err
 }
 
 func (c Cache) deleteEntry(e clob.Entry) (err error) {
