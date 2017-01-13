@@ -4,19 +4,17 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3" // SQLite3 driver
 
 	log "github.com/Sirupsen/logrus"
 
 	"github.com/puddingfactory/filecabinet/clob"
-
-	"io"
-
-	"time"
 
 	"github.com/mitchellh/go-homedir"
 )
@@ -83,8 +81,7 @@ func New(cabinet string) (c Cache, err error) {
 	}
 
 	// Verify db can still be opened, then close it
-	db, err := c.open()
-	if err == nil {
+	if db, err := c.open(); err == nil {
 		db.Close()
 	}
 	return
@@ -123,19 +120,13 @@ func (c Cache) ForgetEntry(e clob.Entry) (err error) {
 }
 
 func (c Cache) init() (err error) {
-	// Verify that cache can be opened
-
-	if err = os.MkdirAll(filepath.Join(cacheRoot, c.Cabinet), cacheMode); err != nil {
-		return
+	// Setup directory (if doesn't exist) and verify that cache can be opened
+	if err = os.MkdirAll(filepath.Join(cacheRoot, c.Cabinet), cacheMode); err == nil {
+		if db, err := c.open(); err == nil {
+			defer db.Close()
+			_, err = db.Exec(stmtCreateTables)
+		}
 	}
-
-	db, err := c.open()
-	if err != nil {
-		return
-	}
-	defer db.Close()
-
-	_, err = db.Exec(stmtCreateTables)
 	return
 }
 
