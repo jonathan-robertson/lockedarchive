@@ -1,13 +1,21 @@
 package fcab
 
 import (
+	"bytes"
+	"compress/gzip"
 	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
-	"sync"
+	"io/ioutil"
+	"log"
+	"os"
+
+	"database/sql"
 
 	"github.com/puddingfactory/filecabinet/clob"
+	"github.com/puddingfactory/filecabinet/crypt"
+	"github.com/puddingfactory/filecabinet/localstorage"
 )
 
 // Plugin represents an interface other plugable systems where changes made to File Cabinet are also pushed
@@ -16,6 +24,7 @@ type Plugin interface {
 	DeleteCabinet() error
 	List(string, chan clob.Entry) error
 	Download(io.WriterAt, clob.Entry) error
+	OpenDownstream(*clob.Entry) error
 	Upload(clob.Entry) error
 	Rename(clob.Entry, string) error
 	Move(clob.Entry, string) error
@@ -26,10 +35,10 @@ type Plugin interface {
 
 // Cabinet represents a collection of entries, symbolizing a cloud container/disk/bucket
 type Cabinet struct {
-	Name    string                // aws bucket
-	entries map[string]clob.Entry // map[key]clob.Entry
-	plugin  Plugin
-	sync.RWMutex
+	Name     string // aws bucket
+	password string // encryption key used to safeguard online storage
+	cache    localstorage.Cache
+	plugin   Plugin
 }
 
 const (
@@ -61,26 +70,30 @@ var (
 )
 
 // OpenCabinet returns a cabinet, if possible, complete with a loaded entries map; LOCKS
-func OpenCabinet(name string, plugin Plugin) (*Cabinet, error) {
-	cab := &Cabinet{
-		Name:    name,
-		entries: make(map[string]clob.Entry),
+func OpenCabinet(name, pass string, plugin Plugin) (cab *Cabinet, err error) {
+	if cache, err := localstorage.New(name); err == nil {
+		cab = &Cabinet{
+			Name:     name,
+			cache:    cache,
+			password: pass,
+			plugin:   plugin,
+		}
+
 	}
+
 	entries := make(chan clob.Entry)
 	done := make(chan bool)
-
 	go func() {
-		cab.Lock()
-		defer cab.Unlock()
 		defer close(done)
 		for entry := range entries {
-			cab.entries[entry.Key] = entry
+			if cacheErr := cab.cache.RememberEntry(entry); cacheErr != nil {
+				log.Println(cacheErr) // TODO: use more permanent logging solution
+			}
 		}
 	}()
 
 	// REVIEW: maybe add logic here to choose between multiple plugins based on Listing/Get cost
-	err := plugin.List("", entries)
-
+	err = plugin.List("", entries)
 	close(entries)  // indicate no new entries will be added
 	<-done          // wait for mapping to complete
 	return cab, err // return err if one exists
@@ -99,14 +112,11 @@ func (cab *Cabinet) assignKey(e clob.Entry) clob.Entry {
 
 // keyExists returns existence of key in entries or if key is the root key; ASSUMES R/LOCKED
 func (cab *Cabinet) keyExists(key string) (exists bool) {
-	_, ok := cab.entries[key]
-	return ok || key == rootKey
+	return key == rootKey || cab.cache.ContainsEntry(key)
 }
 
-// upsert updates or inserts entry safely into the map; LOCKS
+// upsert updates or inserts entry safely into cache
 func (cab *Cabinet) upsert(e clob.Entry) (clob.Entry, error) {
-	cab.Lock()
-	defer cab.Unlock()
 
 	// Verify parent exists
 	if !cab.keyExists(e.ParentKey) {
@@ -118,11 +128,64 @@ func (cab *Cabinet) upsert(e clob.Entry) (clob.Entry, error) {
 		e = cab.assignKey(e)
 	}
 
-	// Assign entry to entries
-	cab.entries[e.Key] = e
-
-	return e, nil
+	return e, cab.cache.RememberEntry(e) // remember entry in cache
 }
+
+// QueueForUpload prepares the file/dir for upload
+func (cab *Cabinet) QueueForUpload(parentKey string, dirent *os.File) (e clob.Entry, err error) {
+	defer dirent.Close()
+
+	// Extract metadata
+	if stats, err := dirent.Stat(); err == nil {
+		var entryType rune
+		if stats.IsDir() {
+			entryType = typeDir
+		} else {
+			entryType = typeFile
+		}
+
+		e = clob.Entry{
+			ParentKey:    parentKey,
+			Name:         stats.Name(),
+			Size:         stats.Size(),
+			LastModified: stats.ModTime(),
+			Type:         entryType,
+		}
+	} else {
+		return e, err
+	}
+
+	// Encrypt and Cache body to prepare for upload
+	if unsafeBytes, err := ioutil.ReadAll(dirent); err == nil {
+		if encryptedBytes, err := crypt.Encrypt(unsafeBytes); err == nil {
+
+			// TODO: update crypt to support streaming also
+
+			pr, pw := io.Pipe()
+			defer pw.Close()
+			e.Body = pr
+
+			gw := gzip.NewWriter(pw)
+			defer gw.Close()
+
+			go func() {
+				if _, err := io.Copy(gw, bytes.NewReader(encryptedBytes)); err != nil {
+					log.Println(err) // TODO: use something more permanent here
+				}
+			}()
+		}
+	}
+
+	e, err = cab.upsert(e) // Cache entry and data
+
+	// TODO: queue upload job with cache
+
+	return
+}
+
+// func (cab Cabinet) pipeForUpload(readCloser io.ReadCloser, e clob.Entry) clob.Entry {
+// 	crypt.
+// }
 
 // UploadEntry receives an Entry without key, assigns key, and updates map
 func (cab *Cabinet) UploadEntry(e clob.Entry) (clob.Entry, error) {
@@ -140,36 +203,24 @@ func (cab *Cabinet) UploadEntry(e clob.Entry) (clob.Entry, error) {
 	return e, cab.plugin.Upload(e) // REVIEW: retry logic to be handled in plugin?
 }
 
-// DownloadEntry saves an entry to the local filesystem
-func (cab *Cabinet) DownloadEntry(e clob.Entry, filename string) error {
-	return cab.DownloadEntry(e, filename) // REVIEW: should have intermediate step for viewing file contents
-}
-
 // DeleteEntry removes an existing entry from the cabinet
 func (cab *Cabinet) DeleteEntry(e clob.Entry) error {
 
-	// Remove from local map
-	cab.Lock()
-	delete(cab.entries, e.Key)
-	cab.Unlock()
+	// Remove from cache
+	if err := cab.cache.ForgetEntry(e); err != nil {
+		log.Println(err) // TODO: use more permanent logging solution
+	}
 
 	// Delete from plugin
 	return cab.plugin.Delete(e)
 }
 
 // LookupEntry retrieves an existing entry from the cabinet
-func (cab *Cabinet) LookupEntry(key string) (clob.Entry, error) {
-	cab.RLock()
-	defer cab.RUnlock()
-
-	e, ok := cab.entries[key]
-	if !ok {
-		// REVIEW: try fetching this key from plugin?
-
-		return e, errEntryDoesNotExist
+func (cab *Cabinet) LookupEntry(key string) (e clob.Entry, err error) {
+	if e, err = cab.cache.RecallEntry(key); err == sql.ErrNoRows {
+		// REVIEW: try fetching this key from plugin, then Remember it in cache and return?
 	}
-
-	return e, nil
+	return
 }
 
 func generateKey() (newKey string) {
