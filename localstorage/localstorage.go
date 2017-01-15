@@ -88,6 +88,11 @@ const (
 	SET %s = ?
 	WHERE key = ?;`
 
+	sqlSelectEntryExists = `
+	SELECT EXISTS(1)
+	FROM entries
+	WHERE id = ?;`
+
 	sqlInsertJob = `
 	INSERT INTO jobs(key, action)
 	VALUES(?, ?);`
@@ -161,14 +166,20 @@ func (c Cache) ForgetEntry(e clob.Entry) (err error) {
 	return
 }
 
+// ContainsEntry returns if an entry exists at provided id
+func (c Cache) ContainsEntry(id int) (exists bool, err error) {
+	err = c.db.QueryRow(sqlSelectEntryExists, id).Scan(&exists)
+	return
+}
+
 // AddJob queues a new job
 func (c Cache) AddJob(key string, action int) (err error) {
-	return c.AddJob(key, action)
+	return c.insertJob(key, action)
 }
 
 // GetNextJob is for fetching the contents of the next job in the queued
 func (c Cache) GetNextJob() (j Job, err error) {
-	return c.GetNextJob()
+	return c.selectNextJob()
 }
 
 // RemoveJob is for removing a job once it's been completed
