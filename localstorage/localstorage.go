@@ -132,7 +132,7 @@ func New(cabinet string) (c Cache, err error) {
 
 // RecallEntry returns the entry (including its data file if cached)
 func (c Cache) RecallEntry(key string) (e clob.Entry, success bool, err error) {
-	if e, success, err = c.selectEntry(key); err == nil && success {
+	if e, err = c.selectEntry(key); err == nil {
 		if file, err := os.Open(filepath.Join(cacheRoot, c.Cabinet, key)); err == nil {
 			e.Body = file // link file, ready for reading
 		} else if os.IsNotExist(err) {
@@ -196,7 +196,7 @@ func (c Cache) open() (*sql.DB, error) {
 	return sql.Open("sqlite3", c.filename())
 }
 
-func (c Cache) selectEntry(key string) (e clob.Entry, success bool, err error) {
+func (c Cache) selectEntry(key string) (e clob.Entry, err error) {
 	if db, err := c.open(); err == nil {
 		defer db.Close()
 		row := db.QueryRow(sqlSelectEntryViaKey, key)
@@ -217,7 +217,7 @@ func (c Cache) selectEntry(key string) (e clob.Entry, success bool, err error) {
 			e.LastModified = time.Unix(unixTimestamp, 0)
 		}
 	}
-	return e, e.Key == key, err
+	return e, err
 }
 
 func (c Cache) upsertEntry(e clob.Entry) (err error) {
@@ -232,17 +232,11 @@ func (c Cache) updateEntry(e clob.Entry) (err error) {
 		defer db.Close()
 
 		// Try fetching existing entry
-		if existingEntry, exists, err := c.selectEntry(e.Key); exists && err == nil {
+		if existingEntry, err := c.selectEntry(e.Key); err == nil {
 			cols, vals := compareEntries(existingEntry, e)
 			for i, col := range cols {
-				if _, err = db.Exec(fmt.Sprintf(sqlUpdateEntryViaKey, col), vals[i], e.Key); err != nil {
-					return err
-				}
+				_, err = db.Exec(fmt.Sprintf(sqlUpdateEntryViaKey, col), vals[i], e.Key)
 			}
-		} else if err != nil {
-			return err
-		} else if !exists {
-			return errNoEntry
 		}
 	}
 	return
@@ -271,16 +265,14 @@ func (c Cache) insertEntry(e clob.Entry) (err error) {
 				e.LastModified.Unix(),
 			)
 		}
-		if err != nil {
-			return err
-		}
-
-		var num int64
-		if num, err = result.RowsAffected(); err == nil && num == 0 {
-			err = errNoRowsChanged
+		if err == nil {
+			var num int64
+			if num, err = result.RowsAffected(); err == nil && num == 0 {
+				err = errNoRowsChanged
+			}
 		}
 	}
-	return err
+	return
 }
 
 func (c Cache) deleteEntry(e clob.Entry) (err error) {
@@ -288,7 +280,7 @@ func (c Cache) deleteEntry(e clob.Entry) (err error) {
 		defer db.Close()
 		_, err = db.Exec(sqlDeleteEntry, e.Key)
 	}
-	return err
+	return
 }
 
 func (c Cache) insertJob(key string, action int) (err error) {
@@ -310,12 +302,7 @@ func (c Cache) selectNextJob() (j Job, err error) {
 	if db, err := c.open(); err == nil {
 		defer db.Close()
 		row := db.QueryRow(sqlGetNextJob)
-
-		err = row.Scan(
-			&j.ID,
-			&j.Key,
-			&j.Action,
-		)
+		err = row.Scan(&j.ID, &j.Key, &j.Action)
 	}
 	return
 }
