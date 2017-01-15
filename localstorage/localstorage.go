@@ -135,7 +135,7 @@ func New(cabinet string) (c Cache, err error) {
 }
 
 // RecallEntry returns the entry (including its data file if cached)
-func (c Cache) RecallEntry(key string) (e clob.Entry, success bool, err error) {
+func (c Cache) RecallEntry(key string) (e clob.Entry, err error) {
 	if e, err = c.selectEntry(key); err == nil {
 		if file, err := os.Open(filepath.Join(cacheRoot, c.Cabinet, key)); err == nil {
 			e.Body = file // link file, ready for reading
