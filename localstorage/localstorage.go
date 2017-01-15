@@ -22,6 +22,7 @@ import (
 // Cache represents the data saved locally to the comptuer
 type Cache struct {
 	Cabinet string
+	db      *sql.DB // The returned DB is safe for concurrent use by multiple goroutines and maintains its own pool of idle connections. Thus, the Open function should be called just once. It is rarely necessary to close a DB.
 }
 
 // Job represents a queued action to take
@@ -116,16 +117,14 @@ var (
 // New opens or creates, opens, and returns the cache database
 func New(cabinet string) (c Cache, err error) {
 	c = Cache{Cabinet: cabinet}
-
-	// Verify if cache.db already exists
-	if fileDoesNotExist(c.filename()) {
-		err = c.init()
-		return
-	}
-
-	// Verify db can still be opened, then close it
-	if db, err := c.open(); err == nil {
-		db.Close()
+	if c.db, err = sql.Open("sqlite3", c.filename()); err != nil {
+		if fileDoesNotExist(c.filename()) { // handle if file simply doesn't exist
+			if err = os.MkdirAll(filepath.Join(cacheRoot, c.Cabinet), cacheMode); err == nil {
+				if c.db, err = sql.Open("sqlite3", c.filename()); err != nil {
+					_, err = c.db.Exec(sqlCreateTables)
+				}
+			}
+		}
 	}
 	return
 }
@@ -177,45 +176,27 @@ func (c Cache) RemoveJob(j Job) (err error) {
 	return c.deleteJob(j)
 }
 
-func (c Cache) init() (err error) {
-	// Setup directory (if doesn't exist) and verify that cache can be opened
-	if err = os.MkdirAll(filepath.Join(cacheRoot, c.Cabinet), cacheMode); err == nil {
-		if db, err := c.open(); err == nil {
-			defer db.Close()
-			_, err = db.Exec(sqlCreateTables)
-		}
-	}
-	return
-}
-
 func (c Cache) filename() string {
 	return filepath.Join(cacheRoot, c.Cabinet, cacheFilename)
 }
 
-func (c Cache) open() (*sql.DB, error) {
-	return sql.Open("sqlite3", c.filename())
-}
-
 func (c Cache) selectEntry(key string) (e clob.Entry, err error) {
-	if db, err := c.open(); err == nil {
-		defer db.Close()
-		row := db.QueryRow(sqlSelectEntryViaKey, key)
+	row := c.db.QueryRow(sqlSelectEntryViaKey, key)
 
-		var size, unixTimestamp int64
-		err = row.Scan(
-			&e.Key,
-			&e.ParentKey,
-			&e.Name,
-			&e.Type,
-			&size,
-			&unixTimestamp,
-		)
-		if size != 0 {
-			e.Size = size
-		}
-		if unixTimestamp != 0 {
-			e.LastModified = time.Unix(unixTimestamp, 0)
-		}
+	var size, unixTimestamp int64
+	err = row.Scan(
+		&e.Key,
+		&e.ParentKey,
+		&e.Name,
+		&e.Type,
+		&size,
+		&unixTimestamp,
+	)
+	if size != 0 {
+		e.Size = size
+	}
+	if unixTimestamp != 0 {
+		e.LastModified = time.Unix(unixTimestamp, 0)
 	}
 	return e, err
 }
@@ -228,90 +209,69 @@ func (c Cache) upsertEntry(e clob.Entry) (err error) {
 }
 
 func (c Cache) updateEntry(e clob.Entry) (err error) {
-	if db, err := c.open(); err == nil {
-		defer db.Close()
-
-		// Try fetching existing entry
-		if existingEntry, err := c.selectEntry(e.Key); err == nil {
-			cols, vals := compareEntries(existingEntry, e)
-			for i, col := range cols {
-				_, err = db.Exec(fmt.Sprintf(sqlUpdateEntryViaKey, col), vals[i], e.Key)
-			}
+	// Try fetching existing entry
+	if existingEntry, err := c.selectEntry(e.Key); err == nil {
+		cols, vals := compareEntries(existingEntry, e)
+		for i, col := range cols {
+			_, err = c.db.Exec(fmt.Sprintf(sqlUpdateEntryViaKey, col), vals[i], e.Key)
 		}
 	}
 	return
 }
 
 func (c Cache) insertEntry(e clob.Entry) (err error) {
-	if db, err := c.open(); err == nil {
-		defer db.Close()
-		var result sql.Result
-		if e.Body == nil {
-			result, err = db.Exec(
-				sqlInsertEntryBase,
-				e.Key,
-				e.ParentKey,
-				e.Name,
-				e.Type,
-			)
-		} else {
-			result, err = db.Exec(
-				sqlInsertEntryComplete,
-				e.Key,
-				e.ParentKey,
-				e.Name,
-				e.Type,
-				e.Size,
-				e.LastModified.Unix(),
-			)
-		}
-		if err == nil {
-			var num int64
-			if num, err = result.RowsAffected(); err == nil && num == 0 {
-				err = errNoRowsChanged
-			}
+	var result sql.Result
+	if e.Body == nil {
+		result, err = c.db.Exec(
+			sqlInsertEntryBase,
+			e.Key,
+			e.ParentKey,
+			e.Name,
+			e.Type,
+		)
+	} else {
+		result, err = c.db.Exec(
+			sqlInsertEntryComplete,
+			e.Key,
+			e.ParentKey,
+			e.Name,
+			e.Type,
+			e.Size,
+			e.LastModified.Unix(),
+		)
+	}
+	if err == nil {
+		var num int64
+		if num, err = result.RowsAffected(); err == nil && num == 0 {
+			err = errNoRowsChanged
 		}
 	}
 	return
 }
 
 func (c Cache) deleteEntry(e clob.Entry) (err error) {
-	if db, err := c.open(); err == nil {
-		defer db.Close()
-		_, err = db.Exec(sqlDeleteEntry, e.Key)
-	}
+	_, err = c.db.Exec(sqlDeleteEntry, e.Key)
 	return
 }
 
 func (c Cache) insertJob(key string, action int) (err error) {
-	if db, err := c.open(); err == nil {
-		defer db.Close()
-
-		var result sql.Result
-		if result, err = db.Exec(sqlInsertJob, key, action); err == nil {
-			var num int64
-			if num, err = result.RowsAffected(); err == nil && num == 0 {
-				err = errNoRowsChanged
-			}
+	var result sql.Result
+	if result, err = c.db.Exec(sqlInsertJob, key, action); err == nil {
+		var num int64
+		if num, err = result.RowsAffected(); err == nil && num == 0 {
+			err = errNoRowsChanged
 		}
 	}
 	return
 }
 
 func (c Cache) selectNextJob() (j Job, err error) {
-	if db, err := c.open(); err == nil {
-		defer db.Close()
-		row := db.QueryRow(sqlGetNextJob)
-		err = row.Scan(&j.ID, &j.Key, &j.Action)
-	}
+	err = c.db.QueryRow(sqlGetNextJob).Scan(&j.ID, &j.Key, &j.Action)
 	return
 }
 
 func (c Cache) deleteJob(j Job) (err error) {
-	if db, err := c.open(); err == nil {
-		defer db.Close()
-		_, err = db.Exec(sqlDeleteJob, j.ID)
-	}
+	_, err = c.db.Exec(sqlDeleteJob, j.ID)
 	return err
 }
 
