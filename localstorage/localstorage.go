@@ -91,7 +91,7 @@ const (
 	sqlSelectEntryExists = `
 	SELECT EXISTS(1)
 	FROM entries
-	WHERE id = ?;`
+	WHERE key = ?;`
 
 	sqlInsertJob = `
 	INSERT INTO jobs(key, action)
@@ -148,8 +148,10 @@ func (c Cache) RecallEntry(key string) (e clob.Entry, success bool, err error) {
 
 // RememberEntry records the entry's file and metadata to cache
 func (c Cache) RememberEntry(e clob.Entry) (err error) {
-	if err = c.upsertEntry(e); err == nil && e.Body != nil {
-		if cacheFile, err := os.Create(filepath.Join(cacheRoot, c.Cabinet, e.Key)); err == nil {
+	if err = c.upsertEntry(e); err == nil {
+		if e.Body == nil {
+			err = deleteFileIfExists(filepath.Join(cacheRoot, c.Cabinet, e.Key))
+		} else if cacheFile, err := os.Create(filepath.Join(cacheRoot, c.Cabinet, e.Key)); err == nil {
 			defer e.Body.Close()
 			defer cacheFile.Close()
 			_, err = io.Copy(cacheFile, e.Body)
@@ -167,8 +169,10 @@ func (c Cache) ForgetEntry(e clob.Entry) (err error) {
 }
 
 // ContainsEntry returns if an entry exists at provided id
-func (c Cache) ContainsEntry(id int) (exists bool, err error) {
-	err = c.db.QueryRow(sqlSelectEntryExists, id).Scan(&exists)
+func (c Cache) ContainsEntry(key string) (exists bool) {
+	if err := c.db.QueryRow(sqlSelectEntryExists, key).Scan(&exists); err != nil {
+		log.Println(err)
+	}
 	return
 }
 
