@@ -58,11 +58,9 @@ func TestRememberEntry(t *testing.T) {
 }
 
 func TestRecallEntry(t *testing.T) {
-	e, success, err := cache.RecallEntry(testEntry.Key)
+	e, err := cache.RecallEntry(testEntry.Key)
 	if err != nil {
 		t.Fatal(err)
-	} else if !success {
-		t.Fatal("no entry was found at", testEntry.Key)
 	}
 
 	if e.Type != testEntry.Type {
