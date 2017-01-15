@@ -162,6 +162,16 @@ func (c Cache) ForgetEntry(e clob.Entry) (err error) {
 	return
 }
 
+// AddJob queues a new job
+func (c Cache) AddJob(key string, action int) (err error) {
+	return c.AddJob(key, action)
+}
+
+// GetNextJob is for fetching the contents of the next job in the queued
+func (c Cache) GetNextJob() (j Job, err error) {
+	return c.GetNextJob()
+}
+
 // RemoveJob is for removing a job once it's been completed
 func (c Cache) RemoveJob(j Job) (err error) {
 	return c.deleteJob(j)
@@ -279,6 +289,35 @@ func (c Cache) deleteEntry(e clob.Entry) (err error) {
 		_, err = db.Exec(sqlDeleteEntry, e.Key)
 	}
 	return err
+}
+
+func (c Cache) insertJob(key string, action int) (err error) {
+	if db, err := c.open(); err == nil {
+		defer db.Close()
+
+		var result sql.Result
+		if result, err = db.Exec(sqlInsertJob, key, action); err == nil {
+			var num int64
+			if num, err = result.RowsAffected(); err == nil && num == 0 {
+				err = errNoRowsChanged
+			}
+		}
+	}
+	return
+}
+
+func (c Cache) selectNextJob() (j Job, err error) {
+	if db, err := c.open(); err == nil {
+		defer db.Close()
+		row := db.QueryRow(sqlGetNextJob)
+
+		err = row.Scan(
+			&j.ID,
+			&j.Key,
+			&j.Action,
+		)
+	}
+	return
 }
 
 func (c Cache) deleteJob(j Job) (err error) {
