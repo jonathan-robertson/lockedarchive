@@ -24,37 +24,80 @@ type Cache struct {
 	Cabinet string
 }
 
-const (
-	stmtCreateTables = `
-	CREATE TABLE entries(
-        key TEXT NOT NULL PRIMARY KEY,
-        parent_key TEXT NOT NULL,
-        name TEXT NOT NULL,
-        type CHAR(1) NOT NULL,
-        size INTEGER,
-        last_modified INTEGER
-    );`
+// Job represents a queued action to take
+type Job struct {
+	ID     int
+	Key    string
+	Action int
+}
 
-	stmtDeleteEntry = `
+const (
+	actionList     = iota
+	actionUpload   = iota
+	actionDownload = iota
+	actionUpdate   = iota
+	actionDelete   = iota
+
+	sqlCreateTables = `
+	CREATE TABLE entries(
+		key TEXT NOT NULL PRIMARY KEY,
+		parent_key TEXT NOT NULL,
+		name TEXT NOT NULL,
+		type CHAR(1) NOT NULL,
+		size INTEGER,
+		last_modified INTEGER
+	);
+
+	CREATE TABLE actions(
+		id INTEGER PRIMARY KEY,
+		name TEXT
+	);
+	INSERT INTO actions(name) VALUES('list');
+	INSERT INTO actions(name) VALUES('upload');
+	INSERT INTO actions(name) VALUES('download');
+	INSERT INTO actions(name) VALUES('update');
+	INSERT INTO actions(name) VALUES('delete');
+
+	CREATE TABLE jobs(
+		id INTEGER PRIMARY KEY,
+		key TEXT NOT NULL,
+		action INTEGER NOT NULL,
+		FOREIGN KEY(key) REFERENCES entries(key),
+		FOREIGN KEY(action) REFERENCES actions(id)
+	);`
+
+	sqlDeleteEntry = `
 	DELETE FROM entries
 	WHERE key = ?;`
 
-	stmtInsertEntryBase = `
+	sqlInsertEntryBase = `
 	INSERT INTO entries(key, parent_key, name, type)
 	VALUES(?, ?, ?, ?);`
 
-	stmtInsertEntryComplete = `
+	sqlInsertEntryComplete = `
 	INSERT INTO entries
 	VALUES(?, ?, ?, ?, ?, ?);`
 
-	stmtSelectEntryViaKey = `
+	sqlSelectEntryViaKey = `
 	SELECT * FROM entries
 	WHERE key = ?;`
 
-	stmtUpdateEntryViaKey = `
+	sqlUpdateEntryViaKey = `
 	UPDATE entries
 	SET %s = ?
 	WHERE key = ?;`
+
+	sqlInsertJob = `
+	INSERT INTO jobs(key, action)
+	VALUES(?, ?);`
+
+	sqlDeleteJob = `
+	DELETE FROM jobs
+	WHERE id = ?;`
+
+	sqlGetNextJob = `
+	SELECT * FROM jobs
+	LIMIT 1;`
 
 	cacheFilename  = "cache.db"
 	macDefaultPath = "Library/Caches/com.puddingfactory.filecabinet" // TODO: base dir off file system and offer user way to modify
@@ -119,12 +162,17 @@ func (c Cache) ForgetEntry(e clob.Entry) (err error) {
 	return
 }
 
+// RemoveJob is for removing a job once it's been completed
+func (c Cache) RemoveJob(j Job) (err error) {
+	return c.deleteJob(j)
+}
+
 func (c Cache) init() (err error) {
 	// Setup directory (if doesn't exist) and verify that cache can be opened
 	if err = os.MkdirAll(filepath.Join(cacheRoot, c.Cabinet), cacheMode); err == nil {
 		if db, err := c.open(); err == nil {
 			defer db.Close()
-			_, err = db.Exec(stmtCreateTables)
+			_, err = db.Exec(sqlCreateTables)
 		}
 	}
 	return
@@ -141,7 +189,7 @@ func (c Cache) open() (*sql.DB, error) {
 func (c Cache) selectEntry(key string) (e clob.Entry, success bool, err error) {
 	if db, err := c.open(); err == nil {
 		defer db.Close()
-		row := db.QueryRow(stmtSelectEntryViaKey, key)
+		row := db.QueryRow(sqlSelectEntryViaKey, key)
 
 		var size, unixTimestamp int64
 		err = row.Scan(
@@ -177,7 +225,7 @@ func (c Cache) updateEntry(e clob.Entry) (err error) {
 		if existingEntry, exists, err := c.selectEntry(e.Key); exists && err == nil {
 			cols, vals := compareEntries(existingEntry, e)
 			for i, col := range cols {
-				if _, err = db.Exec(fmt.Sprintf(stmtUpdateEntryViaKey, col), vals[i], e.Key); err != nil {
+				if _, err = db.Exec(fmt.Sprintf(sqlUpdateEntryViaKey, col), vals[i], e.Key); err != nil {
 					return err
 				}
 			}
@@ -196,7 +244,7 @@ func (c Cache) insertEntry(e clob.Entry) (err error) {
 		var result sql.Result
 		if e.Body == nil {
 			result, err = db.Exec(
-				stmtInsertEntryBase,
+				sqlInsertEntryBase,
 				e.Key,
 				e.ParentKey,
 				e.Name,
@@ -204,7 +252,7 @@ func (c Cache) insertEntry(e clob.Entry) (err error) {
 			)
 		} else {
 			result, err = db.Exec(
-				stmtInsertEntryComplete,
+				sqlInsertEntryComplete,
 				e.Key,
 				e.ParentKey,
 				e.Name,
@@ -228,7 +276,15 @@ func (c Cache) insertEntry(e clob.Entry) (err error) {
 func (c Cache) deleteEntry(e clob.Entry) (err error) {
 	if db, err := c.open(); err == nil {
 		defer db.Close()
-		_, err = db.Exec(stmtDeleteEntry, e.Key)
+		_, err = db.Exec(sqlDeleteEntry, e.Key)
+	}
+	return err
+}
+
+func (c Cache) deleteJob(j Job) (err error) {
+	if db, err := c.open(); err == nil {
+		defer db.Close()
+		_, err = db.Exec(sqlDeleteJob, j.ID)
 	}
 	return err
 }
