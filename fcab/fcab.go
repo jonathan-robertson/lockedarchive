@@ -1,13 +1,21 @@
 package fcab
 
 import (
+	"bytes"
+	"compress/gzip"
 	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
-	"sync"
+	"io/ioutil"
+	"log"
+	"os"
+
+	"database/sql"
 
 	"github.com/puddingfactory/filecabinet/clob"
+	"github.com/puddingfactory/filecabinet/crypt"
+	"github.com/puddingfactory/filecabinet/localstorage"
 )
 
 // Plugin represents an interface other plugable systems where changes made to File Cabinet are also pushed
@@ -16,6 +24,7 @@ type Plugin interface {
 	DeleteCabinet() error
 	List(string, chan clob.Entry) error
 	Download(io.WriterAt, clob.Entry) error
+	OpenDownstream(*clob.Entry) error
 	Upload(clob.Entry) error
 	Rename(clob.Entry, string) error
 	Move(clob.Entry, string) error
@@ -26,10 +35,10 @@ type Plugin interface {
 
 // Cabinet represents a collection of entries, symbolizing a cloud container/disk/bucket
 type Cabinet struct {
-	Name    string                // aws bucket
-	entries map[string]clob.Entry // map[ID]clob.Entry
-	plugins []Plugin
-	sync.RWMutex
+	Name     string // aws bucket
+	password string // encryption key used to safeguard online storage
+	cache    localstorage.Cache
+	plugin   Plugin
 }
 
 const (
@@ -52,110 +61,169 @@ const (
 )
 
 var (
-	errIdentifierInUse    = errors.New("ID in use")
-	errEntryNotPresent    = errors.New("No entry at provided ID")
-	errNoID               = errors.New("No ID is assigned to this entry")
-	errNotExpectingID     = errors.New("ID detected on entry when not expecting one")
-	errParentDoesNotExist = errors.New("Parent doesn't exist")
+	errKeyInUse           = errors.New("key in use")
+	errNoKey              = errors.New("no key is assigned to this entry")
+	errNotExpectingKey    = errors.New("key detected on entry when not expecting one")
+	errEntryDoesNotExist  = errors.New("no entry at provided key")
+	errParentDoesNotExist = errors.New("parent key doesn't exist")
+	errNoPlugins          = errors.New("at least 1 plugin is required to call Open")
 )
 
-// New returns a new cabinet struct
-func New(name string) *Cabinet {
-	return &Cabinet{
-		Name:    name,
-		entries: make(map[string]clob.Entry),
+// OpenCabinet returns a cabinet, if possible, complete with a loaded entries map; LOCKS
+func OpenCabinet(name, pass string, plugin Plugin) (cab *Cabinet, err error) {
+	if cache, err := localstorage.New(name); err == nil {
+		cab = &Cabinet{
+			Name:     name,
+			cache:    cache,
+			password: pass,
+			plugin:   plugin,
+		}
+
 	}
+
+	entries := make(chan clob.Entry)
+	done := make(chan bool)
+	go func() {
+		defer close(done)
+		for entry := range entries {
+			if cacheErr := cab.cache.RememberEntry(entry); cacheErr != nil {
+				log.Println(cacheErr) // TODO: use more permanent logging solution
+			}
+		}
+	}()
+
+	// REVIEW: maybe add logic here to choose between multiple plugins based on Listing/Get cost
+	err = plugin.List("", entries)
+	close(entries)  // indicate no new entries will be added
+	<-done          // wait for mapping to complete
+	return cab, err // return err if one exists
 }
 
-// CreateEntry receives an Entry without an ID, assigns an ID, and Adds
-func (cab *Cabinet) CreateEntry(e clob.Entry) (clob.Entry, error) {
-
-	// Validate entry's fields
-	if len(e.Key) != 0 { // Verify id is empty
-		return e, errNotExpectingID
+// assignKey generates and assigns a new, unused key to entry; ASSUMES LOCKED
+func (cab *Cabinet) assignKey(e clob.Entry) clob.Entry {
+	newKey := rootKey
+	for cab.keyExists(newKey) {
+		newKey = generateKey()
 	}
 
-	// TODO: Verify Name
-	// TODO: Verify Metadata
-	// TODO: Verify EntryType
+	e.Key = newKey // set new, unused key to entry
+	return e
+}
 
-	cab.Lock()
-	defer cab.Unlock()
+// keyExists returns existence of key in entries or if key is the root key; ASSUMES R/LOCKED
+func (cab *Cabinet) keyExists(key string) (exists bool) {
+	return key == rootKey || cab.cache.ContainsEntry(key)
+}
 
-	// TODO: Verify parent exists
-	if _, ok := cab.entries[e.ParentKey]; !ok {
+// upsert updates or inserts entry safely into cache
+func (cab *Cabinet) upsert(e clob.Entry) (clob.Entry, error) {
+
+	// Verify parent exists
+	if !cab.keyExists(e.ParentKey) {
 		return e, errParentDoesNotExist
 	}
 
-	var newID string
-	for {
-		newID = generateNewID()
-		if _, ok := cab.entries[newID]; !ok {
-			break
+	// Generate new key if necessary and assign to
+	if e.Key == "" {
+		e = cab.assignKey(e)
+	}
+
+	return e, cab.cache.RememberEntry(e) // remember entry in cache
+}
+
+// QueueForUpload prepares the file/dir for upload
+func (cab *Cabinet) QueueForUpload(parentKey string, dirent *os.File) (e clob.Entry, err error) {
+	defer dirent.Close()
+
+	// Extract metadata
+	if stats, err := dirent.Stat(); err == nil {
+		var entryType rune
+		if stats.IsDir() {
+			entryType = typeDir
+		} else {
+			entryType = typeFile
+		}
+
+		e = clob.Entry{
+			ParentKey:    parentKey,
+			Name:         stats.Name(),
+			Size:         stats.Size(),
+			LastModified: stats.ModTime(),
+			Type:         entryType,
+		}
+	} else {
+		return e, err
+	}
+
+	// Encrypt and Cache body to prepare for upload
+	if unsafeBytes, err := ioutil.ReadAll(dirent); err == nil {
+		if encryptedBytes, err := crypt.Encrypt(unsafeBytes); err == nil {
+
+			// TODO: update crypt to support streaming also
+
+			pr, pw := io.Pipe()
+			defer pw.Close()
+			e.Body = pr
+
+			gw := gzip.NewWriter(pw)
+			defer gw.Close()
+
+			go func() {
+				if _, err := io.Copy(gw, bytes.NewReader(encryptedBytes)); err != nil {
+					log.Println(err) // TODO: use something more permanent here
+				}
+			}()
 		}
 	}
 
-	e.Key = newID
-	cab.entries[e.Key] = e
+	e, err = cab.upsert(e) // Cache entry and data
 
-	// TODO: Upload object to storage provider?
+	// TODO: queue upload job with cache
 
-	return e, nil
+	return
 }
 
-// AddEntry inserts an entry into the Cabinet
-func (cab *Cabinet) AddEntry(e clob.Entry) error {
-	if len(e.Key) == 0 {
-		return errNoID
+// func (cab Cabinet) pipeForUpload(readCloser io.ReadCloser, e clob.Entry) clob.Entry {
+// 	crypt.
+// }
+
+// UploadEntry receives an Entry without key, assigns key, and updates map
+func (cab *Cabinet) UploadEntry(e clob.Entry) (clob.Entry, error) {
+
+	// TODO: Verify Name
+	// TODO: Verify EntryType
+	// TODO: Verify Metadata
+
+	// Update local map
+	e, err := cab.upsert(e)
+	if err != nil {
+		return e, err
 	}
 
-	cab.Lock()
-	defer cab.Unlock()
-
-	if _, ok := cab.entries[e.Key]; ok { // Expecting entry to not exist yet
-		return errIdentifierInUse
-	}
-
-	cab.entries[e.Key] = e
-	return nil
-}
-
-// UpdateEntry updates an existing entry in the Cabinet
-func (cab *Cabinet) UpdateEntry(e clob.Entry) error {
-	cab.Lock()
-	defer cab.Unlock()
-
-	if _, ok := cab.entries[e.Key]; !ok { // Expecting entry to exist already
-		return errEntryNotPresent
-	}
-
-	cab.entries[e.Key] = e
-	return nil
+	return e, cab.plugin.Upload(e) // REVIEW: retry logic to be handled in plugin?
 }
 
 // DeleteEntry removes an existing entry from the cabinet
-func (cab *Cabinet) DeleteEntry(id string) error {
-	cab.Lock()
-	defer cab.Unlock()
+func (cab *Cabinet) DeleteEntry(e clob.Entry) error {
 
-	delete(cab.entries, id)
-	return nil
-}
-
-// GetEntry retrieves an existing entry from the cabinet
-func (cab *Cabinet) GetEntry(id string) (clob.Entry, error) {
-	cab.RLock()
-	defer cab.RUnlock()
-
-	e, ok := cab.entries[id]
-	if !ok {
-		return e, errEntryNotPresent
+	// Remove from cache
+	if err := cab.cache.ForgetEntry(e); err != nil {
+		log.Println(err) // TODO: use more permanent logging solution
 	}
 
-	return e, nil
+	// Delete from plugin
+	return cab.plugin.Delete(e)
 }
 
-func generateNewID() (newID string) {
+// LookupEntry retrieves an existing entry from the cabinet
+func (cab *Cabinet) LookupEntry(key string) (e clob.Entry, err error) {
+	if e, err = cab.cache.RecallEntry(key); err == sql.ErrNoRows {
+		// REVIEW: try fetching this key from plugin, then Remember it in cache and return?
+	}
+	return
+}
+
+func generateKey() (newKey string) {
 	b := make([]byte, sizeOfKey)
 	if _, err := rand.Read(b); err != nil {
 		panic(err)

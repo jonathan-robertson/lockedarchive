@@ -61,7 +61,7 @@ func TestUpload(t *testing.T) {
 		Size:         int64(len(testBody)),
 		LastModified: time.Now(),
 		Type:         '-',
-		Body:         bytes.NewReader(testBody),
+		Body:         ioutil.NopCloser(bytes.NewReader(testBody)),
 	}
 
 	if err := plugin.Upload(e); err != nil {
