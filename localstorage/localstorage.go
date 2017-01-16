@@ -186,22 +186,20 @@ func (c Cache) ContainsEntry(key string) (exists bool) {
 	return
 }
 
-// AddJob queues a new job
-func (c Cache) AddJob(key string, action int) (err error) {
+// EnqueueJob queues a new job
+func (c Cache) EnqueueJob(key string, action int) (err error) {
 	if !isValidAction(action) {
 		return errInvalidAction
 	}
 	return c.insertJob(key, action)
 }
 
-// GetNextJob is for fetching the contents of the next job in the queued
-func (c Cache) GetNextJob() (j Job, err error) {
-	return c.selectNextJob()
-}
-
-// RemoveJob is for removing a job once it's been completed
-func (c Cache) RemoveJob(j Job) (err error) {
-	return c.deleteJob(j)
+// DequeueJob is for fetching the contents of the next job in the queued
+func (c Cache) DequeueJob() (j Job, err error) {
+	if j, err = c.selectNextJob(); err == nil {
+		err = c.deleteJob(j)
+	}
+	return
 }
 
 func (c Cache) filename() string {
