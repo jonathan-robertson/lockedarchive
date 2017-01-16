@@ -4,14 +4,14 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/rand"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"os"
-
-	"database/sql"
+	"time"
 
 	"github.com/puddingfactory/filecabinet/clob"
 	"github.com/puddingfactory/filecabinet/crypt"
@@ -99,10 +99,37 @@ func OpenCabinet(name, pass string, client Client) (cab *Cabinet, err error) {
 	return cab, err // return err if one exists
 }
 
+func (c Cabinet) monitorQueue(workerCount int) {
+	jobs := make(chan localstorage.Job)
+	for i := 0; i < workerCount; i++ {
+		func() {
+			for job := range jobs {
+				switch job.Action {
+				case localstorage.ActionDelete:
+				case localstorage.ActionDownload:
+				case localstorage.ActionList:
+				case localstorage.ActionUpdate:
+				case localstorage.ActionUpload:
+				}
+			}
+		}()
+	}
+
+	for {
+		if job, err := c.cache.DequeueJob(); err == nil {
+			jobs <- job
+		} else {
+			time.Sleep(1 * time.Second) // sleep if no more jobs are queued
+		}
+	}
+
+	// TODO: add mechanism to handle closure of cabinet
+}
+
 // assignKey generates and assigns a new, unused key to entry; ASSUMES LOCKED
-func (cab *Cabinet) assignKey(e clob.Entry) clob.Entry {
+func (c *Cabinet) assignKey(e clob.Entry) clob.Entry {
 	newKey := rootKey
-	for cab.keyExists(newKey) {
+	for c.keyExists(newKey) {
 		newKey = generateKey()
 	}
 
@@ -111,28 +138,28 @@ func (cab *Cabinet) assignKey(e clob.Entry) clob.Entry {
 }
 
 // keyExists returns existence of key in entries or if key is the root key; ASSUMES R/LOCKED
-func (cab *Cabinet) keyExists(key string) (exists bool) {
-	return key == rootKey || cab.cache.ContainsEntry(key)
+func (c *Cabinet) keyExists(key string) (exists bool) {
+	return key == rootKey || c.cache.ContainsEntry(key)
 }
 
 // upsert updates or inserts entry safely into cache
-func (cab *Cabinet) upsert(e clob.Entry) (clob.Entry, error) {
+func (c *Cabinet) upsert(e clob.Entry) (clob.Entry, error) {
 
 	// Verify parent exists
-	if !cab.keyExists(e.ParentKey) {
+	if !c.keyExists(e.ParentKey) {
 		return e, errParentDoesNotExist
 	}
 
 	// Generate new key if necessary and assign to
 	if e.Key == "" {
-		e = cab.assignKey(e)
+		e = c.assignKey(e)
 	}
 
-	return e, cab.cache.RememberEntry(e) // remember entry in cache
+	return e, c.cache.RememberEntry(e) // remember entry in cache
 }
 
 // QueueForUpload prepares the file/dir for upload
-func (cab *Cabinet) QueueForUpload(parentKey string, dirent *os.File) (e clob.Entry, err error) {
+func (c *Cabinet) QueueForUpload(parentKey string, dirent *os.File) (e clob.Entry, err error) {
 	defer dirent.Close()
 
 	// Extract metadata
@@ -177,8 +204,8 @@ func (cab *Cabinet) QueueForUpload(parentKey string, dirent *os.File) (e clob.En
 	}
 
 	// Cache entry and data
-	if e, err = cab.upsert(e); err != nil {
-		cab.cache.AddJob(e.Key, localstorage.ActionUpload) // queue upload job with cache
+	if e, err = c.upsert(e); err != nil {
+		c.cache.EnqueueJob(e.Key, localstorage.ActionUpload) // queue upload job with cache
 	}
 
 	return
@@ -189,36 +216,36 @@ func (cab *Cabinet) QueueForUpload(parentKey string, dirent *os.File) (e clob.En
 // }
 
 // UploadEntry receives an Entry without key, assigns key, and updates map
-func (cab *Cabinet) UploadEntry(e clob.Entry) (clob.Entry, error) {
+func (c *Cabinet) UploadEntry(e clob.Entry) (clob.Entry, error) {
 
 	// TODO: Verify Name
 	// TODO: Verify EntryType
 	// TODO: Verify Metadata
 
 	// Update local map
-	e, err := cab.upsert(e)
+	e, err := c.upsert(e)
 	if err != nil {
 		return e, err
 	}
 
-	return e, cab.client.Upload(e) // REVIEW: retry logic to be handled in client?
+	return e, c.client.Upload(e) // REVIEW: retry logic to be handled in client?
 }
 
 // DeleteEntry removes an existing entry from the cabinet
-func (cab *Cabinet) DeleteEntry(e clob.Entry) error {
+func (c *Cabinet) DeleteEntry(e clob.Entry) error {
 
 	// Remove from cache
-	if err := cab.cache.ForgetEntry(e); err != nil {
+	if err := c.cache.ForgetEntry(e); err != nil {
 		log.Println(err) // TODO: use more permanent logging solution
 	}
 
 	// Delete from client
-	return cab.client.Delete(e)
+	return c.client.Delete(e)
 }
 
 // LookupEntry retrieves an existing entry from the cabinet
-func (cab *Cabinet) LookupEntry(key string) (e clob.Entry, err error) {
-	if e, err = cab.cache.RecallEntry(key); err == sql.ErrNoRows {
+func (c *Cabinet) LookupEntry(key string) (e clob.Entry, err error) {
+	if e, err = c.cache.RecallEntry(key); err == sql.ErrNoRows {
 		// REVIEW: try fetching this key from client, then Remember it in cache and return?
 	}
 	return
