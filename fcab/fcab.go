@@ -41,6 +41,12 @@ type Cabinet struct {
 	client   Client
 }
 
+// JobProcessor processes jobs as they become availalbe
+type JobProcessor struct {
+	cabinet *Cabinet
+	pool    chan JobProcessor
+}
+
 const (
 	/* Following Linux standard
 	-    Regular file
@@ -67,6 +73,8 @@ var (
 	errEntryDoesNotExist  = errors.New("no entry at provided key")
 	errParentDoesNotExist = errors.New("parent key doesn't exist")
 	errNoPlugins          = errors.New("at least 1 client is required to call Open")
+
+	configWorkerCount = 3 // TODO: allow this to be changed
 )
 
 // OpenCabinet returns a cabinet, if possible, complete with a loaded entries map; LOCKS
@@ -94,32 +102,57 @@ func OpenCabinet(name, pass string, client Client) (cab *Cabinet, err error) {
 
 	// REVIEW: maybe add logic here to choose between multiple plugins based on Listing/Get cost
 	err = client.List("", entries)
-	close(entries)  // indicate no new entries will be added
-	<-done          // wait for mapping to complete
+	close(entries) // indicate no new entries will be added
+	<-done         // wait for mapping to complete
+	go cab.monitorJobs(configWorkerCount)
 	return cab, err // return err if one exists
 }
 
-func (c Cabinet) monitorQueue(workerCount int) {
-	jobs := make(chan localstorage.Job)
-	for i := 0; i < workerCount; i++ {
-		func() {
-			for job := range jobs {
-				switch job.Action {
-				case localstorage.ActionDelete:
-				case localstorage.ActionDownload:
-				case localstorage.ActionList:
-				case localstorage.ActionUpdate:
-				case localstorage.ActionUpload:
-				}
-			}
-		}()
+// AddNewJobProcessor creates a new job processor and adds it to the pool
+func AddNewJobProcessor(cabinet *Cabinet, processorPool chan JobProcessor) {
+	jp := JobProcessor{cabinet: cabinet, pool: processorPool}
+	jp.pool <- jp
+}
+
+// Process handles a job to completion, adding self back to pool when done
+func (jp JobProcessor) Process(job localstorage.Job) {
+
+	// TODO: retry logic and lots of logging here
+	var err error
+	switch job.Action {
+	case localstorage.ActionDelete:
+	case localstorage.ActionDownload:
+	case localstorage.ActionList:
+	case localstorage.ActionUpdate:
+	case localstorage.ActionUpload:
+		if e, err := jp.cabinet.cache.RecallEntry(job.Key); err == nil {
+			_, err = jp.cabinet.UploadEntry(e)
+		}
+	}
+	if err != nil {
+		log.Println(job, err)
 	}
 
-	for {
-		if job, err := c.cache.DequeueJob(); err == nil {
-			jobs <- job
-		} else {
-			time.Sleep(1 * time.Second) // sleep if no more jobs are queued
+	jp.pool <- jp
+}
+
+func (c Cabinet) monitorJobs(workerCount int) {
+
+	// Setup JobProcessor pool
+	pool := make(chan JobProcessor, workerCount)
+	for i := 0; i < workerCount; i++ {
+		AddNewJobProcessor(&c, pool)
+	}
+
+	// Loop over processors and jobs to assign them
+	for jp := range pool {
+		for {
+			if job, err := c.cache.DequeueJob(); err == nil {
+				go jp.Process(job) // dispatch processor to handle job
+				break              // get for next available processor
+			} else {
+				time.Sleep(1 * time.Second) // sleep if no more jobs are queued
+			}
 		}
 	}
 
