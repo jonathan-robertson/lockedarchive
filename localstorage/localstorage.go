@@ -33,11 +33,20 @@ type Job struct {
 }
 
 const (
-	actionList     = iota
-	actionUpload   = iota
-	actionDownload = iota
-	actionUpdate   = iota
-	actionDelete   = iota
+	// ActionList is a job action for List
+	ActionList = iota
+
+	// ActionUpload is a job action for Upload
+	ActionUpload = iota
+
+	// ActionDownload is a job action for Download
+	ActionDownload = iota
+
+	// ActionUpdate is a job action for Update
+	ActionUpdate = iota
+
+	// ActionDelete is a job action for Delete
+	ActionDelete = iota
 
 	sqlCreateTables = `
 	CREATE TABLE entries(
@@ -117,6 +126,7 @@ var (
 
 	errNoRowsChanged = errors.New("no rows changed during operation")
 	errNoEntry       = errors.New("no entry found at provided key")
+	errInvalidAction = errors.New("invalid action")
 )
 
 // New opens or creates, opens, and returns the cache database
@@ -178,6 +188,9 @@ func (c Cache) ContainsEntry(key string) (exists bool) {
 
 // AddJob queues a new job
 func (c Cache) AddJob(key string, action int) (err error) {
+	if !isValidAction(action) {
+		return errInvalidAction
+	}
 	return c.insertJob(key, action)
 }
 
@@ -345,4 +358,13 @@ func deleteFileIfExists(filename string) error {
 func fileDoesNotExist(filename string) bool {
 	_, err := os.Stat(filename)
 	return os.IsNotExist(err)
+}
+
+func isValidAction(action int) bool {
+	switch action {
+	case ActionList, ActionUpload, ActionDownload, ActionUpdate, ActionDelete:
+		return true
+	default:
+		return false
+	}
 }
