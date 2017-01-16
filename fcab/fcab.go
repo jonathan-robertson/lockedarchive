@@ -18,8 +18,8 @@ import (
 	"github.com/puddingfactory/filecabinet/localstorage"
 )
 
-// Plugin represents an interface other plugable systems where changes made to File Cabinet are also pushed
-type Plugin interface {
+// Client represents an interface other plugable systems where changes made to File Cabinet are also pushed
+type Client interface {
 	CreateCabinet() error
 	DeleteCabinet() error
 	List(string, chan clob.Entry) error
@@ -38,7 +38,7 @@ type Cabinet struct {
 	Name     string // aws bucket
 	password string // encryption key used to safeguard online storage
 	cache    localstorage.Cache
-	plugin   Plugin
+	client   Client
 }
 
 const (
@@ -66,17 +66,17 @@ var (
 	errNotExpectingKey    = errors.New("key detected on entry when not expecting one")
 	errEntryDoesNotExist  = errors.New("no entry at provided key")
 	errParentDoesNotExist = errors.New("parent key doesn't exist")
-	errNoPlugins          = errors.New("at least 1 plugin is required to call Open")
+	errNoPlugins          = errors.New("at least 1 client is required to call Open")
 )
 
 // OpenCabinet returns a cabinet, if possible, complete with a loaded entries map; LOCKS
-func OpenCabinet(name, pass string, plugin Plugin) (cab *Cabinet, err error) {
+func OpenCabinet(name, pass string, client Client) (cab *Cabinet, err error) {
 	if cache, err := localstorage.New(name); err == nil {
 		cab = &Cabinet{
 			Name:     name,
 			cache:    cache,
 			password: pass,
-			plugin:   plugin,
+			client:   client,
 		}
 
 	}
@@ -93,7 +93,7 @@ func OpenCabinet(name, pass string, plugin Plugin) (cab *Cabinet, err error) {
 	}()
 
 	// REVIEW: maybe add logic here to choose between multiple plugins based on Listing/Get cost
-	err = plugin.List("", entries)
+	err = client.List("", entries)
 	close(entries)  // indicate no new entries will be added
 	<-done          // wait for mapping to complete
 	return cab, err // return err if one exists
@@ -200,7 +200,7 @@ func (cab *Cabinet) UploadEntry(e clob.Entry) (clob.Entry, error) {
 		return e, err
 	}
 
-	return e, cab.plugin.Upload(e) // REVIEW: retry logic to be handled in plugin?
+	return e, cab.client.Upload(e) // REVIEW: retry logic to be handled in client?
 }
 
 // DeleteEntry removes an existing entry from the cabinet
@@ -211,14 +211,14 @@ func (cab *Cabinet) DeleteEntry(e clob.Entry) error {
 		log.Println(err) // TODO: use more permanent logging solution
 	}
 
-	// Delete from plugin
-	return cab.plugin.Delete(e)
+	// Delete from client
+	return cab.client.Delete(e)
 }
 
 // LookupEntry retrieves an existing entry from the cabinet
 func (cab *Cabinet) LookupEntry(key string) (e clob.Entry, err error) {
 	if e, err = cab.cache.RecallEntry(key); err == sql.ErrNoRows {
-		// REVIEW: try fetching this key from plugin, then Remember it in cache and return?
+		// REVIEW: try fetching this key from client, then Remember it in cache and return?
 	}
 	return
 }

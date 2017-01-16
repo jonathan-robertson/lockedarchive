@@ -1,4 +1,4 @@
-package s3plugin
+package s3client
 
 import (
 	"bytes"
@@ -23,12 +23,12 @@ const (
 )
 
 var (
-	plugin   Plugin
+	client   Client
 	testBody = []byte("This is all I need: a boomfish in my soul.")
 )
 
 func init() {
-	p := Plugin{
+	p := Client{
 		Bucket:            bucket,
 		region:            region,
 		accessKey:         os.Getenv("ACCESS_KEY"),
@@ -46,7 +46,7 @@ func init() {
 
 func TestCreateBucket(t *testing.T) {
 	var err error
-	plugin, err = New(bucket, region, os.Getenv("ACCESS_KEY"), os.Getenv("SECRET_KEY"))
+	client, err = New(bucket, region, os.Getenv("ACCESS_KEY"), os.Getenv("SECRET_KEY"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestUpload(t *testing.T) {
 		Body:         ioutil.NopCloser(bytes.NewReader(testBody)),
 	}
 
-	if err := plugin.Upload(e); err != nil {
+	if err := client.Upload(e); err != nil {
 		t.Fatal(err)
 	}
 	t.Log("uploaded key", testKey)
@@ -85,7 +85,7 @@ func TestList(t *testing.T) {
 		}
 	}()
 
-	if err := plugin.List("", entries); err != nil {
+	if err := client.List("", entries); err != nil {
 		t.Fatal(err)
 	}
 
@@ -101,7 +101,7 @@ func TestList(t *testing.T) {
 func TestRename(t *testing.T) {
 
 	// Fetch current metadata of key
-	head, err := plugin.head(testKey)
+	head, err := client.head(testKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,12 +120,12 @@ func TestRename(t *testing.T) {
 	}
 
 	// Update name
-	if err := plugin.Rename(entry, "fish.txt"); err != nil {
+	if err := client.Rename(entry, "fish.txt"); err != nil {
 		t.Fatal(err)
 	}
 
 	// Verify name-change
-	if head, err := plugin.head(testKey); err != nil {
+	if head, err := client.head(testKey); err != nil {
 		t.Fatal(err)
 	} else if head.Metadata["Name"] == nil {
 		t.Fatal("expected name, but head didn't have one")
@@ -153,7 +153,7 @@ func TestDownload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := plugin.Download(file, clob.Entry{Key: testKey}); err != nil {
+	if err := client.Download(file, clob.Entry{Key: testKey}); err != nil {
 		t.Fatal(err)
 	}
 	file.Close() // done writing
@@ -172,14 +172,14 @@ func TestDownload(t *testing.T) {
 }
 
 func TestDeleteObject(t *testing.T) {
-	if err := plugin.Delete(clob.Entry{Key: testKey}); err != nil {
+	if err := client.Delete(clob.Entry{Key: testKey}); err != nil {
 		t.Fatal(err)
 	}
 	t.Log("deleted key", testKey)
 }
 
 func TestDeleteBucket(t *testing.T) {
-	if err := plugin.DeleteCabinet(); err != nil {
+	if err := client.DeleteCabinet(); err != nil {
 		t.Fatal(err)
 	}
 	t.Log("deleted bucket", bucket)
