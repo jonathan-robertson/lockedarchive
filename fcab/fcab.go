@@ -176,9 +176,10 @@ func (cab *Cabinet) QueueForUpload(parentKey string, dirent *os.File) (e clob.En
 		}
 	}
 
-	e, err = cab.upsert(e) // Cache entry and data
-
-	// TODO: queue upload job with cache
+	// Cache entry and data
+	if e, err = cab.upsert(e); err != nil {
+		cab.cache.AddJob(e.Key, localstorage.ActionUpload) // queue upload job with cache
+	}
 
 	return
 }
