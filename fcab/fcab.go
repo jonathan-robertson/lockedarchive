@@ -121,9 +121,15 @@ func (jp JobProcessor) Process(job localstorage.Job) {
 	var err error
 	switch job.Action {
 	case localstorage.ActionDelete:
+		if e, err := jp.cabinet.cache.RecallEntry(job.Key); err == nil {
+			err = jp.cabinet.DeleteEntry(e)
+		}
 	case localstorage.ActionDownload:
+		log.Println(job, "not yet implemented") // TODO
 	case localstorage.ActionList:
+		log.Println(job, "not yet implemented") // TODO
 	case localstorage.ActionUpdate:
+		log.Println(job, "not yet implemented") // TODO
 	case localstorage.ActionUpload:
 		if e, err := jp.cabinet.cache.RecallEntry(job.Key); err == nil {
 			_, err = jp.cabinet.UploadEntry(e)
@@ -250,6 +256,7 @@ func (c *Cabinet) QueueForUpload(parentKey string, dirent *os.File) (e clob.Entr
 
 // UploadEntry receives an Entry without key, assigns key, and updates map
 func (c *Cabinet) UploadEntry(e clob.Entry) (clob.Entry, error) {
+	// TODO: Redisign with caching in mind
 
 	// TODO: Verify Name
 	// TODO: Verify EntryType
