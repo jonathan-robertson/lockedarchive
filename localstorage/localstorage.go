@@ -129,8 +129,8 @@ var (
 	errInvalidAction = errors.New("invalid action")
 )
 
-// New opens or creates, opens, and returns the cache database
-func New(cabinet string) (c Cache, err error) {
+// Open opens or creates, opens, and returns the cache database
+func Open(cabinet string) (c Cache, err error) {
 	c = Cache{Cabinet: cabinet}
 	if c.db, err = sql.Open("sqlite3", c.filename()); err != nil {
 		if fileDoesNotExist(c.filename()) { // handle if file simply doesn't exist
@@ -142,6 +142,11 @@ func New(cabinet string) (c Cache, err error) {
 		}
 	}
 	return
+}
+
+// Close shuts down the connection to the database
+func (c Cache) Close() error {
+	return c.db.Close()
 }
 
 // RecallEntry returns the entry (including its data file if cached)
