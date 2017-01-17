@@ -39,12 +39,15 @@ type Cabinet struct {
 	password string // encryption key used to safeguard online storage
 	cache    localstorage.Cache
 	client   Client
+
+	processorPool chan JobProcessor
+	shutdownPool  chan JobProcessor
+	shutdownFlag  bool
 }
 
 // JobProcessor processes jobs as they become availalbe
 type JobProcessor struct {
 	cabinet *Cabinet
-	pool    chan JobProcessor
 }
 
 const (
@@ -78,13 +81,15 @@ var (
 )
 
 // OpenCabinet returns a cabinet, if possible, complete with a loaded entries map; LOCKS
-func OpenCabinet(name, pass string, client Client) (cab *Cabinet, err error) {
-	if cache, err := localstorage.New(name); err == nil {
-		cab = &Cabinet{
-			Name:     name,
-			cache:    cache,
-			password: pass,
-			client:   client,
+func OpenCabinet(name, pass string, client Client) (c *Cabinet, err error) {
+	if cache, err := localstorage.Open(name); err == nil {
+		c = &Cabinet{
+			Name:          name,
+			cache:         cache,
+			password:      pass,
+			client:        client,
+			processorPool: make(chan JobProcessor, configWorkerCount),
+			shutdownPool:  make(chan JobProcessor),
 		}
 
 	}
@@ -94,7 +99,7 @@ func OpenCabinet(name, pass string, client Client) (cab *Cabinet, err error) {
 	go func() {
 		defer close(done)
 		for entry := range entries {
-			if cacheErr := cab.cache.RememberEntry(entry); cacheErr != nil {
+			if cacheErr := c.cache.RememberEntry(entry); cacheErr != nil {
 				log.Println(cacheErr) // TODO: use more permanent logging solution
 			}
 		}
@@ -104,14 +109,27 @@ func OpenCabinet(name, pass string, client Client) (cab *Cabinet, err error) {
 	err = client.List("", entries)
 	close(entries) // indicate no new entries will be added
 	<-done         // wait for mapping to complete
-	go cab.monitorJobs(configWorkerCount)
-	return cab, err // return err if one exists
+
+	// Setup JobProcessor pool
+	for i := 0; i < configWorkerCount; i++ {
+		c.processorPool <- JobProcessor{cabinet: c}
+	}
+	go c.monitorJobs()
+
+	return c, err // return err if one exists
 }
 
-// AddNewJobProcessor creates a new job processor and adds it to the pool
-func AddNewJobProcessor(cabinet *Cabinet, processorPool chan JobProcessor) {
-	jp := JobProcessor{cabinet: cabinet, pool: processorPool}
-	jp.pool <- jp
+// Close triggers the shutdown of the cabinet's workers and closure of the cache db
+func (c *Cabinet) Close() error {
+	c.shutdownFlag = true
+
+	processorsShutDown := 0
+	for _ = range c.shutdownPool {
+		if processorsShutDown++; processorsShutDown == configWorkerCount {
+			break
+		}
+	}
+	return c.cache.Close()
 }
 
 // Process handles a job to completion, adding self back to pool when done
@@ -139,19 +157,16 @@ func (jp JobProcessor) Process(job localstorage.Job) {
 		log.Println(job, err)
 	}
 
-	jp.pool <- jp
+	if jp.cabinet.shutdownFlag {
+		jp.cabinet.shutdownPool <- jp
+	} else {
+		jp.cabinet.processorPool <- jp
+	}
 }
 
-func (c Cabinet) monitorJobs(workerCount int) {
-
-	// Setup JobProcessor pool
-	pool := make(chan JobProcessor, workerCount)
-	for i := 0; i < workerCount; i++ {
-		AddNewJobProcessor(&c, pool)
-	}
-
-	// Loop over processors and jobs to assign them
-	for jp := range pool {
+// monitorJobs loops over processors and and assigns jobs to them as they become available
+func (c Cabinet) monitorJobs() {
+	for jp := range c.processorPool {
 		for {
 			if job, err := c.cache.DequeueJob(); err == nil {
 				go jp.Process(job) // dispatch processor to handle job
@@ -161,11 +176,9 @@ func (c Cabinet) monitorJobs(workerCount int) {
 			}
 		}
 	}
-
-	// TODO: add mechanism to handle closure of cabinet
 }
 
-// assignKey generates and assigns a new, unused key to entry; ASSUMES LOCKED
+// assignKey generates and assigns a new, unused key to entry
 func (c *Cabinet) assignKey(e clob.Entry) clob.Entry {
 	newKey := rootKey
 	for c.keyExists(newKey) {
@@ -176,7 +189,7 @@ func (c *Cabinet) assignKey(e clob.Entry) clob.Entry {
 	return e
 }
 
-// keyExists returns existence of key in entries or if key is the root key; ASSUMES R/LOCKED
+// keyExists returns existence of key in entries or if key is the root key
 func (c *Cabinet) keyExists(key string) (exists bool) {
 	return key == rootKey || c.cache.ContainsEntry(key)
 }
