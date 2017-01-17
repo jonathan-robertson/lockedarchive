@@ -163,11 +163,14 @@ func (c Cache) RecallEntry(key string) (e clob.Entry, err error) {
 
 // RememberEntry records the entry's file and metadata to cache
 func (c Cache) RememberEntry(e clob.Entry) (err error) {
+	if e.Body != nil {
+		defer e.Body.Close() // be sure to close this even if err on upsertEntry
+	}
+
 	if err = c.upsertEntry(e); err == nil {
 		if e.Body == nil {
 			err = deleteFileIfExists(filepath.Join(cacheRoot, c.Cabinet, e.Key))
 		} else if cacheFile, err := os.Create(filepath.Join(cacheRoot, c.Cabinet, e.Key)); err == nil {
-			defer e.Body.Close()
 			defer cacheFile.Close()
 			_, err = io.Copy(cacheFile, e.Body)
 		}
