@@ -245,6 +245,14 @@ func (c Cabinet) DeleteEntry(e clob.Entry) error {
 	return c.client.Delete(e) // Delete from client
 }
 
+// DownloadEntry retrieves the file data from client
+func (c Cabinet) DownloadEntry(entry clob.Entry) (err error) {
+	if err = c.client.OpenDownstream(&entry); err == nil {
+		err = c.cache.RememberEntry(entry)
+	}
+	return
+}
+
 // LookupEntry retrieves an existing entry from the cabinet
 func (c Cabinet) LookupEntry(key string) (e clob.Entry, err error) {
 	if e, err = c.cache.RecallEntry(key); err == sql.ErrNoRows {
@@ -258,18 +266,19 @@ func (jp JobProcessor) Process(job localstorage.Job) {
 
 	// TODO: retry logic and lots of logging here
 	var err error
-	if e, err := jp.cabinet.cache.RecallEntry(job.Key); err == nil {
+	if entry, err := jp.cabinet.cache.RecallEntry(job.Key); err == nil {
 		switch job.Action {
 		case localstorage.ActionDelete:
-			err = jp.cabinet.DeleteEntry(e)
+			err = jp.cabinet.DeleteEntry(entry)
 		case localstorage.ActionDownload:
-			log.Println(job, "not yet implemented") // TODO
+			err = jp.cabinet.DownloadEntry(entry)
+			// TODO: expand job so we can infer what to do after download completes? Ex: DownloadPreview or DownloadSave types?
 		case localstorage.ActionList:
 			log.Println(job, "not yet implemented") // TODO
 		case localstorage.ActionUpdate:
 			log.Println(job, "not yet implemented") // TODO
 		case localstorage.ActionUpload:
-			err = jp.cabinet.UploadEntry(e)
+			err = jp.cabinet.UploadEntry(entry)
 		}
 	}
 	if err != nil {
