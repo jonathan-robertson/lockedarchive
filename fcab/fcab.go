@@ -150,7 +150,7 @@ func (jp JobProcessor) Process(job localstorage.Job) {
 		log.Println(job, "not yet implemented") // TODO
 	case localstorage.ActionUpload:
 		if e, err := jp.cabinet.cache.RecallEntry(job.Key); err == nil {
-			_, err = jp.cabinet.UploadEntry(e)
+			err = jp.cabinet.UploadEntry(e)
 		}
 	}
 	if err != nil {
@@ -210,8 +210,8 @@ func (c *Cabinet) upsert(e clob.Entry) (clob.Entry, error) {
 	return e, c.cache.RememberEntry(e) // remember entry in cache
 }
 
-// QueueForUpload prepares the file/dir for upload
-func (c Cabinet) QueueForUpload(parentKey string, dirent *os.File) (entry clob.Entry, err error) {
+// QueueEntryForUpload prepares the file/dir for upload
+func (c Cabinet) QueueEntryForUpload(parentKey string, dirent *os.File) (entry clob.Entry, err error) {
 	defer dirent.Close()
 
 	// Extract metadata
@@ -268,18 +268,8 @@ func (c Cabinet) QueueForUpload(parentKey string, dirent *os.File) (entry clob.E
 // }
 
 // UploadEntry receives an Entry without key, assigns key, and updates cache
-func (c Cabinet) UploadEntry(e clob.Entry) (clob.Entry, error) {
-	// TODO: Verify Name
-	// TODO: Verify EntryType
-	// TODO: Verify Metadata
-
-	// Update local map
-	e, err := c.upsert(e) // Update cache
-	if err != nil {
-		return e, err
-	}
-
-	return e, c.client.Upload(e)
+func (c Cabinet) UploadEntry(e clob.Entry) error {
+	return c.client.Upload(e)
 }
 
 // DeleteEntry removes an existing entry from the cabinet
