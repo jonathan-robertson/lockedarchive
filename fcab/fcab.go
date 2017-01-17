@@ -211,7 +211,7 @@ func (c *Cabinet) upsert(e clob.Entry) (clob.Entry, error) {
 }
 
 // QueueForUpload prepares the file/dir for upload
-func (c Cabinet) QueueForUpload(parentKey string, dirent *os.File) (e clob.Entry, err error) {
+func (c Cabinet) QueueForUpload(parentKey string, dirent *os.File) (entry clob.Entry, err error) {
 	defer dirent.Close()
 
 	// Extract metadata
@@ -223,7 +223,7 @@ func (c Cabinet) QueueForUpload(parentKey string, dirent *os.File) (e clob.Entry
 			entryType = typeFile
 		}
 
-		e = clob.Entry{
+		entry = clob.Entry{
 			ParentKey:    parentKey,
 			Name:         stats.Name(),
 			Size:         stats.Size(),
@@ -231,7 +231,7 @@ func (c Cabinet) QueueForUpload(parentKey string, dirent *os.File) (e clob.Entry
 			Type:         entryType,
 		}
 	} else {
-		return e, err
+		return entry, err
 	}
 
 	// Encrypt and Cache body to prepare for upload
@@ -242,7 +242,7 @@ func (c Cabinet) QueueForUpload(parentKey string, dirent *os.File) (e clob.Entry
 
 			pr, pw := io.Pipe()
 			defer pw.Close()
-			e.Body = pr
+			entry.Body = pr
 
 			gw := gzip.NewWriter(pw)
 			defer gw.Close()
@@ -256,8 +256,8 @@ func (c Cabinet) QueueForUpload(parentKey string, dirent *os.File) (e clob.Entry
 	}
 
 	// Cache entry and data
-	if e, err = c.upsert(e); err != nil {
-		c.cache.EnqueueJob(e.Key, localstorage.ActionUpload) // queue upload job with cache
+	if entry, err = c.upsert(entry); err == nil {
+		err = c.cache.EnqueueJob(entry.Key, localstorage.ActionUpload) // queue upload job
 	}
 
 	return
@@ -267,33 +267,28 @@ func (c Cabinet) QueueForUpload(parentKey string, dirent *os.File) (e clob.Entry
 // 	crypt.
 // }
 
-// UploadEntry receives an Entry without key, assigns key, and updates map
+// UploadEntry receives an Entry without key, assigns key, and updates cache
 func (c Cabinet) UploadEntry(e clob.Entry) (clob.Entry, error) {
-	// TODO: Redisign with caching in mind
-
 	// TODO: Verify Name
 	// TODO: Verify EntryType
 	// TODO: Verify Metadata
 
 	// Update local map
-	e, err := c.upsert(e)
+	e, err := c.upsert(e) // Update cache
 	if err != nil {
 		return e, err
 	}
 
-	return e, c.client.Upload(e) // REVIEW: retry logic to be handled in client?
+	return e, c.client.Upload(e)
 }
 
 // DeleteEntry removes an existing entry from the cabinet
 func (c Cabinet) DeleteEntry(e clob.Entry) error {
-
-	// Remove from cache
-	if err := c.cache.ForgetEntry(e); err != nil {
+	if err := c.cache.ForgetEntry(e); err != nil { // Remove from cache
 		log.Println(err) // TODO: use more permanent logging solution
+		return err       // REVIEW: sure we want to abort on cache forget error?
 	}
-
-	// Delete from client
-	return c.client.Delete(e)
+	return c.client.Delete(e) // Delete from client
 }
 
 // LookupEntry retrieves an existing entry from the cabinet
