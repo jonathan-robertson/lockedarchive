@@ -132,38 +132,6 @@ func (c *Cabinet) Close() error {
 	return c.cache.Close()
 }
 
-// Process handles a job to completion, adding self back to pool when done
-func (jp JobProcessor) Process(job localstorage.Job) {
-
-	// TODO: retry logic and lots of logging here
-	var err error
-	switch job.Action {
-	case localstorage.ActionDelete:
-		if e, err := jp.cabinet.cache.RecallEntry(job.Key); err == nil {
-			err = jp.cabinet.DeleteEntry(e)
-		}
-	case localstorage.ActionDownload:
-		log.Println(job, "not yet implemented") // TODO
-	case localstorage.ActionList:
-		log.Println(job, "not yet implemented") // TODO
-	case localstorage.ActionUpdate:
-		log.Println(job, "not yet implemented") // TODO
-	case localstorage.ActionUpload:
-		if e, err := jp.cabinet.cache.RecallEntry(job.Key); err == nil {
-			err = jp.cabinet.UploadEntry(e)
-		}
-	}
-	if err != nil {
-		log.Println(job, err)
-	}
-
-	if jp.cabinet.shutdownFlag {
-		jp.cabinet.shutdownPool <- jp
-	} else {
-		jp.cabinet.processorPool <- jp
-	}
-}
-
 // monitorJobs loops over processors and and assigns jobs to them as they become available
 func (c Cabinet) monitorJobs() {
 	for jp := range c.processorPool {
@@ -263,13 +231,9 @@ func (c Cabinet) QueueEntryForUpload(parentKey string, dirent *os.File) (entry c
 	return
 }
 
-// func (cab Cabinet) pipeForUpload(readCloser io.ReadCloser, e clob.Entry) clob.Entry {
-// 	crypt.
-// }
-
 // UploadEntry receives an Entry without key, assigns key, and updates cache
 func (c Cabinet) UploadEntry(e clob.Entry) error {
-	return c.client.Upload(e)
+	return c.client.Upload(e) // REVIEW: should cache delete cached file data after upload complete?
 }
 
 // DeleteEntry removes an existing entry from the cabinet
@@ -287,6 +251,36 @@ func (c Cabinet) LookupEntry(key string) (e clob.Entry, err error) {
 		// REVIEW: try fetching this key from client, then Remember it in cache and return?
 	}
 	return
+}
+
+// Process handles a job to completion, adding self back to pool when done
+func (jp JobProcessor) Process(job localstorage.Job) {
+
+	// TODO: retry logic and lots of logging here
+	var err error
+	if e, err := jp.cabinet.cache.RecallEntry(job.Key); err == nil {
+		switch job.Action {
+		case localstorage.ActionDelete:
+			err = jp.cabinet.DeleteEntry(e)
+		case localstorage.ActionDownload:
+			log.Println(job, "not yet implemented") // TODO
+		case localstorage.ActionList:
+			log.Println(job, "not yet implemented") // TODO
+		case localstorage.ActionUpdate:
+			log.Println(job, "not yet implemented") // TODO
+		case localstorage.ActionUpload:
+			err = jp.cabinet.UploadEntry(e)
+		}
+	}
+	if err != nil {
+		log.Println(job, err)
+	}
+
+	if jp.cabinet.shutdownFlag {
+		jp.cabinet.shutdownPool <- jp
+	} else {
+		jp.cabinet.processorPool <- jp
+	}
 }
 
 func generateKey() (newKey string) {
