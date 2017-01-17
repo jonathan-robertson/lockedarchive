@@ -179,7 +179,7 @@ func (c Cabinet) monitorJobs() {
 }
 
 // assignKey generates and assigns a new, unused key to entry
-func (c *Cabinet) assignKey(e clob.Entry) clob.Entry {
+func (c Cabinet) assignKey(e clob.Entry) clob.Entry {
 	newKey := rootKey
 	for c.keyExists(newKey) {
 		newKey = generateKey()
@@ -190,7 +190,7 @@ func (c *Cabinet) assignKey(e clob.Entry) clob.Entry {
 }
 
 // keyExists returns existence of key in entries or if key is the root key
-func (c *Cabinet) keyExists(key string) (exists bool) {
+func (c Cabinet) keyExists(key string) (exists bool) {
 	return key == rootKey || c.cache.ContainsEntry(key)
 }
 
@@ -211,7 +211,7 @@ func (c *Cabinet) upsert(e clob.Entry) (clob.Entry, error) {
 }
 
 // QueueForUpload prepares the file/dir for upload
-func (c *Cabinet) QueueForUpload(parentKey string, dirent *os.File) (e clob.Entry, err error) {
+func (c Cabinet) QueueForUpload(parentKey string, dirent *os.File) (e clob.Entry, err error) {
 	defer dirent.Close()
 
 	// Extract metadata
@@ -268,7 +268,7 @@ func (c *Cabinet) QueueForUpload(parentKey string, dirent *os.File) (e clob.Entr
 // }
 
 // UploadEntry receives an Entry without key, assigns key, and updates map
-func (c *Cabinet) UploadEntry(e clob.Entry) (clob.Entry, error) {
+func (c Cabinet) UploadEntry(e clob.Entry) (clob.Entry, error) {
 	// TODO: Redisign with caching in mind
 
 	// TODO: Verify Name
@@ -285,7 +285,7 @@ func (c *Cabinet) UploadEntry(e clob.Entry) (clob.Entry, error) {
 }
 
 // DeleteEntry removes an existing entry from the cabinet
-func (c *Cabinet) DeleteEntry(e clob.Entry) error {
+func (c Cabinet) DeleteEntry(e clob.Entry) error {
 
 	// Remove from cache
 	if err := c.cache.ForgetEntry(e); err != nil {
@@ -297,7 +297,7 @@ func (c *Cabinet) DeleteEntry(e clob.Entry) error {
 }
 
 // LookupEntry retrieves an existing entry from the cabinet
-func (c *Cabinet) LookupEntry(key string) (e clob.Entry, err error) {
+func (c Cabinet) LookupEntry(key string) (e clob.Entry, err error) {
 	if e, err = c.cache.RecallEntry(key); err == sql.ErrNoRows {
 		// REVIEW: try fetching this key from client, then Remember it in cache and return?
 	}
