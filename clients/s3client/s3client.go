@@ -37,9 +37,9 @@ var (
 )
 
 // New will return a new s3 client after creating the Bucket (if necessary)
-func New(cabinetName, region, accessKey, secretKey string) (c Client, err error) {
+func New(cabinetName, region, accessKey, secretKey string) (client Client, err error) {
 	// REVIEW: Verify validity of cabinetName as a bucket name first
-	c = Client{
+	client = Client{
 		Bucket:            cabinetName,
 		region:            region,
 		accessKey:         accessKey,
@@ -48,93 +48,93 @@ func New(cabinetName, region, accessKey, secretKey string) (c Client, err error)
 		getLimiter:        rate.NewLimiter(getLimit, 1),
 	}
 
-	if !c.bucketExists() {
-		err = c.CreateCabinet()
+	if !client.bucketExists() {
+		err = client.CreateCabinet()
 	}
 
 	return
 }
 
-func (c Client) bucketExists() bool {
+func (client Client) bucketExists() bool {
 	params := &s3.HeadBucketInput{
-		Bucket: aws.String(c.Bucket), // Required
+		Bucket: aws.String(client.Bucket), // Required
 	}
 
-	time.Sleep(c.putListDelLimiter.Reserve().Delay())
-	if _, err := c.svc().HeadBucket(params); err != nil {
+	time.Sleep(client.putListDelLimiter.Reserve().Delay())
+	if _, err := client.svc().HeadBucket(params); err != nil {
 		return false
 	}
 
 	return true
 }
 
-func (c Client) svc() *s3.S3 {
+func (client Client) svc() *s3.S3 {
 	token := "" // unsure of purpose
 
 	config := &aws.Config{
-		Region: aws.String(c.region),
+		Region: aws.String(client.region),
 		Credentials: credentials.NewStaticCredentials(
-			c.accessKey,
-			c.secretKey,
+			client.accessKey,
+			client.secretKey,
 			token),
 	}
 
 	return s3.New(session.New(config))
 }
 
-func (c Client) uploader() *s3manager.Uploader {
-	return s3manager.NewUploaderWithClient(c.svc(), func(u *s3manager.Uploader) {
+func (client Client) uploader() *s3manager.Uploader {
+	return s3manager.NewUploaderWithClient(client.svc(), func(u *s3manager.Uploader) {
 		u.PartSize = uploadPartSize
 		u.Concurrency = uploadConcurrency
 	})
 }
 
-func (c Client) downloader() *s3manager.Downloader {
-	return s3manager.NewDownloaderWithClient(c.svc(), func(d *s3manager.Downloader) {
+func (client Client) downloader() *s3manager.Downloader {
+	return s3manager.NewDownloaderWithClient(client.svc(), func(d *s3manager.Downloader) {
 		d.PartSize = downloadPartSize
 		d.Concurrency = downloadConcurrency
 	})
 }
 
 // CreateCabinet will create a new cabinet in storage
-func (c Client) CreateCabinet() error {
+func (client Client) CreateCabinet() error {
 	params := &s3.CreateBucketInput{
-		Bucket: aws.String(c.Bucket),
+		Bucket: aws.String(client.Bucket),
 	}
 
-	if _, err := c.svc().CreateBucket(params); err != nil {
+	if _, err := client.svc().CreateBucket(params); err != nil {
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
 		fmt.Println(err.Error())
 		return err
 	}
 
-	return c.confirmBucketCreation()
+	return client.confirmBucketCreation()
 }
 
 // DeleteCabinet will delete an existing cabinet from storage
-func (c Client) DeleteCabinet() error {
+func (client Client) DeleteCabinet() error {
 	params := &s3.DeleteBucketInput{
-		Bucket: aws.String(c.Bucket),
+		Bucket: aws.String(client.Bucket),
 	}
 
-	if _, err := c.svc().DeleteBucket(params); err != nil {
+	if _, err := client.svc().DeleteBucket(params); err != nil {
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
 		fmt.Println(err.Error())
 		return err
 	}
 
-	return c.confirmBucketDeletion()
+	return client.confirmBucketDeletion()
 }
 
 // List fetches keys from storage and translates them to entries, then feeds entries to channel
-func (c Client) List(prefix string, entries chan clob.Entry) error {
+func (client Client) List(prefix string, entries chan clob.Entry) error {
 	var (
 		wg      sync.WaitGroup
 		objects = make(chan *s3.Object, downloadConcurrency)
 		params  = &s3.ListObjectsV2Input{
-			Bucket: aws.String(c.Bucket), // Required
+			Bucket: aws.String(client.Bucket), // Required
 			// ContinuationToken: aws.String("Token"),
 			// Delimiter:         aws.String("Delimiter"),
 			EncodingType: aws.String("url"),
@@ -151,7 +151,7 @@ func (c Client) List(prefix string, entries chan clob.Entry) error {
 		go func() {
 			defer wg.Done()
 			for object := range objects {
-				if header, err := c.head(*object.Key); err != nil {
+				if header, err := client.head(*object.Key); err != nil {
 					fmt.Println(err)
 				} else {
 					if entry, ok := makeEntry(object, header); ok {
@@ -162,13 +162,13 @@ func (c Client) List(prefix string, entries chan clob.Entry) error {
 		}()
 	}
 
-	time.Sleep(c.putListDelLimiter.Reserve().Delay())
-	err := c.svc().ListObjectsV2Pages(params, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
+	time.Sleep(client.putListDelLimiter.Reserve().Delay())
+	err := client.svc().ListObjectsV2Pages(params, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
 		for _, object := range page.Contents {
 			objects <- object
 		}
 
-		time.Sleep(c.putListDelLimiter.Reserve().Delay())
+		time.Sleep(client.putListDelLimiter.Reserve().Delay())
 		return *page.IsTruncated // REVIEW: This may not be totally accurate at all times
 	})
 
@@ -201,19 +201,19 @@ func makeEntry(object *s3.Object, head *s3.HeadObjectOutput) (entry clob.Entry, 
 	}, true
 }
 
-func composeMetadata(e clob.Entry) (metadata map[string]*string) {
+func composeMetadata(entry clob.Entry) (metadata map[string]*string) {
 	return map[string]*string{
-		"parent-key": aws.String(e.ParentKey),
-		"name":       aws.String(e.Name),
-		"type":       aws.String(fmt.Sprintf("%c", e.Type)),
+		"parent-key": aws.String(entry.ParentKey),
+		"name":       aws.String(entry.Name),
+		"type":       aws.String(fmt.Sprintf("%c", entry.Type)),
 	}
 }
 
-func (c Client) head(key string) (*s3.HeadObjectOutput, error) {
+func (client Client) head(key string) (*s3.HeadObjectOutput, error) {
 	// for object := range objects {
 	params := &s3.HeadObjectInput{
-		Bucket: aws.String(c.Bucket), // Required
-		Key:    aws.String(key),      // Required
+		Bucket: aws.String(client.Bucket), // Required
+		Key:    aws.String(key),           // Required
 		// IfMatch:              aws.String("IfMatch"),
 		// IfModifiedSince:      aws.Time(time.Now()),
 		// IfNoneMatch:          aws.String("IfNoneMatch"),
@@ -227,8 +227,8 @@ func (c Client) head(key string) (*s3.HeadObjectOutput, error) {
 		// VersionId:            aws.String("ObjectVersionId"),
 	}
 
-	time.Sleep(c.getLimiter.Reserve().Delay())
-	resp, err := c.svc().HeadObject(params)
+	time.Sleep(client.getLimiter.Reserve().Delay())
+	resp, err := client.svc().HeadObject(params)
 	if err != nil {
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
@@ -240,41 +240,41 @@ func (c Client) head(key string) (*s3.HeadObjectOutput, error) {
 }
 
 // Upload object in s3
-func (c Client) Upload(e clob.Entry) error {
+func (client Client) Upload(entry clob.Entry) error {
 	upParams := &s3manager.UploadInput{
-		Bucket:   aws.String(c.Bucket), // Required
-		Key:      aws.String(e.Key),    // Required
-		Metadata: composeMetadata(e),
-		Body:     e.Body,
+		Bucket:   aws.String(client.Bucket), // Required
+		Key:      aws.String(entry.Key),     // Required
+		Metadata: composeMetadata(entry),
+		Body:     entry.Body,
 	}
 
-	if _, err := c.uploader().Upload(upParams); err != nil {
+	if _, err := client.uploader().Upload(upParams); err != nil {
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
 		fmt.Println(err.Error())
 		return err
 	}
-	return c.confirmObjectCreation(e.Key)
+	return client.confirmObjectCreation(entry.Key)
 }
 
 // Move updates the ParentKey in metadata
-func (c Client) Move(e clob.Entry, newParent string) error {
-	e.ParentKey = newParent
-	return c.Update(e)
+func (client Client) Move(entry clob.Entry, newParent string) error {
+	entry.ParentKey = newParent
+	return client.Update(entry)
 }
 
 // Rename updates the Name in metadata
-func (c Client) Rename(e clob.Entry, newName string) error {
-	e.Name = newName // Update Name
-	return c.Update(e)
+func (client Client) Rename(entry clob.Entry, newName string) error {
+	entry.Name = newName // Update Name
+	return client.Update(entry)
 }
 
 // Update pushes changes in metadata to the online object
-func (c Client) Update(e clob.Entry) error {
+func (client Client) Update(entry clob.Entry) error {
 	params := &s3.CopyObjectInput{
-		Bucket:     aws.String(c.Bucket),               // Required
-		CopySource: aws.String(c.Bucket + "/" + e.Key), // Required
-		Key:        aws.String(e.Key),                  // Required
+		Bucket:     aws.String(client.Bucket),                   // Required
+		CopySource: aws.String(client.Bucket + "/" + entry.Key), // Required
+		Key:        aws.String(entry.Key),                       // Required
 		// ACL:                            aws.String("ObjectCannedACL"),
 		// CacheControl:                   aws.String("CacheControl"),
 		// ContentDisposition:             aws.String("ContentDisposition"),
@@ -293,7 +293,7 @@ func (c Client) Update(e clob.Entry) error {
 		// GrantRead:                      aws.String("GrantRead"),
 		// GrantReadACP:                   aws.String("GrantReadACP"),
 		// GrantWriteACP:                  aws.String("GrantWriteACP"),
-		Metadata:          composeMetadata(e),
+		Metadata:          composeMetadata(entry),
 		MetadataDirective: aws.String(s3.MetadataDirectiveReplace),
 		// RequestPayer:            aws.String("RequestPayer"),
 		// SSECustomerAlgorithm:    aws.String("SSECustomerAlgorithm"),
@@ -305,7 +305,7 @@ func (c Client) Update(e clob.Entry) error {
 		// WebsiteRedirectLocation: aws.String("WebsiteRedirectLocation"),
 	}
 
-	if _, err := c.svc().CopyObject(params); err != nil {
+	if _, err := client.svc().CopyObject(params); err != nil {
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
 		fmt.Println(err.Error())
@@ -315,30 +315,30 @@ func (c Client) Update(e clob.Entry) error {
 }
 
 // Delete removes the entry from storage
-func (c Client) Delete(e clob.Entry) error {
+func (client Client) Delete(entry clob.Entry) error {
 	params := &s3.DeleteObjectInput{
-		Bucket: aws.String(c.Bucket), // Required
-		Key:    aws.String(e.Key),    // Required
+		Bucket: aws.String(client.Bucket), // Required
+		Key:    aws.String(entry.Key),     // Required
 		// MFA:          aws.String("MFA"),
 		// RequestPayer: aws.String("RequestPayer"),
 		// VersionId:    aws.String("ObjectVersionId"),
 	}
 
-	if _, err := c.svc().DeleteObject(params); err != nil {
+	if _, err := client.svc().DeleteObject(params); err != nil {
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
 		fmt.Println(err.Error())
 		return err
 	}
 
-	return c.confirmObjectDeletion(e.Key)
+	return client.confirmObjectDeletion(entry.Key)
 }
 
 // Download writes data from an entry to the provided writer
-func (c Client) Download(w io.WriterAt, e clob.Entry) error {
+func (client Client) Download(w io.WriterAt, entry clob.Entry) error {
 	params := &s3.GetObjectInput{
-		Bucket: aws.String(c.Bucket), // Required
-		Key:    aws.String(e.Key),    // Required
+		Bucket: aws.String(client.Bucket), // Required
+		Key:    aws.String(entry.Key),     // Required
 		// IfMatch:                    aws.String("IfMatch"),
 		// IfModifiedSince:            aws.Time(time.Now()),
 		// IfNoneMatch:                aws.String("IfNoneMatch"),
@@ -358,7 +358,7 @@ func (c Client) Download(w io.WriterAt, e clob.Entry) error {
 		// VersionId:                  aws.String("ObjectVersionId"),
 	}
 
-	if _, err := c.downloader().Download(w, params); err != nil {
+	if _, err := client.downloader().Download(w, params); err != nil {
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
 		fmt.Println(err.Error())
@@ -368,10 +368,10 @@ func (c Client) Download(w io.WriterAt, e clob.Entry) error {
 }
 
 // OpenDownstream links the object data with entry.Body
-func (c Client) OpenDownstream(e *clob.Entry) (err error) {
+func (client Client) OpenDownstream(entry *clob.Entry) (err error) {
 	params := &s3.GetObjectInput{
-		Bucket: aws.String(c.Bucket), // Required
-		Key:    aws.String(e.Key),    // Required
+		Bucket: aws.String(client.Bucket), // Required
+		Key:    aws.String(entry.Key),     // Required
 		// IfMatch:                    aws.String("IfMatch"),
 		// IfModifiedSince:            aws.Time(time.Now()),
 		// IfNoneMatch:                aws.String("IfNoneMatch"),
@@ -390,18 +390,18 @@ func (c Client) OpenDownstream(e *clob.Entry) (err error) {
 		// SSECustomerKeyMD5:          aws.String("SSECustomerKeyMD5"),
 		// VersionId:                  aws.String("ObjectVersionId"),
 	}
-	if resp, err := c.svc().GetObject(params); err == nil {
-		e.Body = resp.Body
+	if resp, err := client.svc().GetObject(params); err == nil {
+		entry.Body = resp.Body
 	}
 	return
 }
 
 // Copy duplicates the contents and metadata of one entry to a new key
-func (c Client) Copy(source clob.Entry, destinationKey string) error {
+func (client Client) Copy(source clob.Entry, destinationKey string) error {
 	params := &s3.CopyObjectInput{
-		Bucket:     aws.String(c.Bucket),                    // Required
-		CopySource: aws.String(c.Bucket + "/" + source.Key), // Required
-		Key:        aws.String(destinationKey),              // Required
+		Bucket:     aws.String(client.Bucket),                    // Required
+		CopySource: aws.String(client.Bucket + "/" + source.Key), // Required
+		Key:        aws.String(destinationKey),                   // Required
 		// ACL:                            aws.String("ObjectCannedACL"),
 		// CacheControl:                   aws.String("CacheControl"),
 		// ContentDisposition:             aws.String("ContentDisposition"),
@@ -432,41 +432,41 @@ func (c Client) Copy(source clob.Entry, destinationKey string) error {
 		// WebsiteRedirectLocation: aws.String("WebsiteRedirectLocation"),
 	}
 
-	if _, err := c.svc().CopyObject(params); err != nil {
+	if _, err := client.svc().CopyObject(params); err != nil {
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
 		fmt.Println(err.Error())
 		return err
 	}
-	return c.confirmObjectCreation(destinationKey)
+	return client.confirmObjectCreation(destinationKey)
 }
 
-func (c Client) confirmBucketCreation() error {
+func (client Client) confirmBucketCreation() error {
 	headBucketInput := &s3.HeadBucketInput{
-		Bucket: aws.String(c.Bucket),
+		Bucket: aws.String(client.Bucket),
 	}
-	return c.svc().WaitUntilBucketExists(headBucketInput)
+	return client.svc().WaitUntilBucketExists(headBucketInput)
 }
 
-func (c Client) confirmBucketDeletion() error {
+func (client Client) confirmBucketDeletion() error {
 	headBucketInput := &s3.HeadBucketInput{
-		Bucket: aws.String(c.Bucket),
+		Bucket: aws.String(client.Bucket),
 	}
-	return c.svc().WaitUntilBucketNotExists(headBucketInput)
+	return client.svc().WaitUntilBucketNotExists(headBucketInput)
 }
 
-func (c Client) confirmObjectCreation(key string) error {
+func (client Client) confirmObjectCreation(key string) error {
 	headObjectInput := &s3.HeadObjectInput{
-		Bucket: aws.String(c.Bucket),
+		Bucket: aws.String(client.Bucket),
 		Key:    aws.String(key),
 	}
-	return c.svc().WaitUntilObjectExists(headObjectInput)
+	return client.svc().WaitUntilObjectExists(headObjectInput)
 }
 
-func (c Client) confirmObjectDeletion(key string) error {
+func (client Client) confirmObjectDeletion(key string) error {
 	headObjectInput := &s3.HeadObjectInput{
-		Bucket: aws.String(c.Bucket),
+		Bucket: aws.String(client.Bucket),
 		Key:    aws.String(key),
 	}
-	return c.svc().WaitUntilObjectNotExists(headObjectInput)
+	return client.svc().WaitUntilObjectNotExists(headObjectInput)
 }

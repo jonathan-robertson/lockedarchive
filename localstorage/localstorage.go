@@ -130,30 +130,37 @@ var (
 )
 
 // Open opens or creates, opens, and returns the cache database
-func Open(cabinet string) (c Cache, err error) {
-	c = Cache{Cabinet: cabinet}
-	if c.db, err = sql.Open("sqlite3", c.filename()); err != nil {
-		if fileDoesNotExist(c.filename()) { // handle if file simply doesn't exist
-			if err = os.MkdirAll(filepath.Join(cacheRoot, c.Cabinet), cacheMode); err == nil {
-				if c.db, err = sql.Open("sqlite3", c.filename()); err != nil {
-					_, err = c.db.Exec(sqlCreateTables)
+func Open(cabinet string) (cache Cache, err error) {
+	cache = Cache{Cabinet: cabinet}
+	if cache.db, err = sql.Open("sqlite3", cache.filename()); err != nil {
+		if fileDoesNotExist(cache.filename()) { // handle if file simply doesn't exist
+			if err = os.MkdirAll(filepath.Join(cacheRoot, cache.Cabinet), cacheMode); err == nil {
+				if cache.db, err = sql.Open("sqlite3", cache.filename()); err != nil {
+					_, err = cache.db.Exec(sqlCreateTables)
 				}
 			}
 		}
 	}
+
+	if err = cache.db.Ping(); err != nil {
+		fmt.Println("ERROR DURING PING", err)
+	} else {
+		fmt.Println("PING SUCCESS")
+	}
+
 	return
 }
 
 // Close shuts down the connection to the database
-func (c Cache) Close() error {
-	return c.db.Close()
+func (cache Cache) Close() error {
+	return cache.db.Close()
 }
 
 // RecallEntry returns the entry (including its data file if cached)
-func (c Cache) RecallEntry(key string) (e clob.Entry, err error) {
-	if e, err = c.selectEntry(key); err == nil {
-		if file, err := os.Open(filepath.Join(cacheRoot, c.Cabinet, key)); err == nil {
-			e.Body = file // link file, ready for reading
+func (cache Cache) RecallEntry(key string) (entry clob.Entry, err error) {
+	if entry, err = cache.selectEntry(key); err == nil {
+		if file, err := os.Open(filepath.Join(cacheRoot, cache.Cabinet, key)); err == nil {
+			entry.Body = file // link file, ready for reading
 		} else if os.IsNotExist(err) {
 			err = nil // ignore error if the file just doesn't happen to exist
 		}
@@ -162,116 +169,116 @@ func (c Cache) RecallEntry(key string) (e clob.Entry, err error) {
 }
 
 // RememberEntry records the entry's file and metadata to cache
-func (c Cache) RememberEntry(e clob.Entry) (err error) {
-	if e.Body != nil {
-		defer e.Body.Close() // be sure to close this even if err on upsertEntry
+func (cache Cache) RememberEntry(entry clob.Entry) (err error) {
+	if entry.Body != nil {
+		defer entry.Body.Close() // be sure to close this even if err on upsertEntry
 	}
 
-	if err = c.upsertEntry(e); err == nil {
-		if e.Body == nil {
-			err = deleteFileIfExists(filepath.Join(cacheRoot, c.Cabinet, e.Key))
-		} else if cacheFile, err := os.Create(filepath.Join(cacheRoot, c.Cabinet, e.Key)); err == nil {
+	if err = cache.upsertEntry(entry); err == nil {
+		if entry.Body == nil {
+			err = deleteFileIfExists(filepath.Join(cacheRoot, cache.Cabinet, entry.Key))
+		} else if cacheFile, err := os.Create(filepath.Join(cacheRoot, cache.Cabinet, entry.Key)); err == nil {
 			defer cacheFile.Close()
-			_, err = io.Copy(cacheFile, e.Body)
+			_, err = io.Copy(cacheFile, entry.Body)
 		}
 	}
 	return
 }
 
 // ForgetEntry purges the entry's cache data and info from db
-func (c Cache) ForgetEntry(e clob.Entry) (err error) {
-	if err = deleteFileIfExists(filepath.Join(cacheRoot, c.Cabinet, e.Key)); err == nil {
-		err = c.deleteEntry(e) // remove entry from db
+func (cache Cache) ForgetEntry(entry clob.Entry) (err error) {
+	if err = deleteFileIfExists(filepath.Join(cacheRoot, cache.Cabinet, entry.Key)); err == nil {
+		err = cache.deleteEntry(entry) // remove entry from db
 	}
 	return
 }
 
 // ContainsEntry returns if an entry exists at provided id
-func (c Cache) ContainsEntry(key string) (exists bool) {
-	if err := c.db.QueryRow(sqlSelectEntryExists, key).Scan(&exists); err != nil {
+func (cache Cache) ContainsEntry(key string) (exists bool) {
+	if err := cache.db.QueryRow(sqlSelectEntryExists, key).Scan(&exists); err != nil {
 		log.Println(err)
 	}
 	return
 }
 
 // EnqueueJob queues a new job
-func (c Cache) EnqueueJob(key string, action int) (err error) {
+func (cache Cache) EnqueueJob(key string, action int) (err error) {
 	if !isValidAction(action) {
 		return errInvalidAction
 	}
-	return c.insertJob(key, action)
+	return cache.insertJob(key, action)
 }
 
 // DequeueJob is for fetching the contents of the next job in the queued
-func (c Cache) DequeueJob() (j Job, err error) {
-	if j, err = c.selectNextJob(); err == nil {
-		err = c.deleteJob(j)
+func (cache Cache) DequeueJob() (j Job, err error) {
+	if j, err = cache.selectNextJob(); err == nil {
+		err = cache.deleteJob(j)
 	}
 	return
 }
 
-func (c Cache) filename() string {
-	return filepath.Join(cacheRoot, c.Cabinet, cacheFilename)
+func (cache Cache) filename() string {
+	return filepath.Join(cacheRoot, cache.Cabinet, cacheFilename)
 }
 
-func (c Cache) selectEntry(key string) (e clob.Entry, err error) {
-	row := c.db.QueryRow(sqlSelectEntryViaKey, key)
+func (cache *Cache) selectEntry(key string) (entry clob.Entry, err error) {
+	row := cache.db.QueryRow(sqlSelectEntryViaKey, key)
 
 	var size, unixTimestamp int64
 	err = row.Scan(
-		&e.Key,
-		&e.ParentKey,
-		&e.Name,
-		&e.Type,
+		&entry.Key,
+		&entry.ParentKey,
+		&entry.Name,
+		&entry.Type,
 		&size,
 		&unixTimestamp,
 	)
 	if size != 0 {
-		e.Size = size
+		entry.Size = size
 	}
 	if unixTimestamp != 0 {
-		e.LastModified = time.Unix(unixTimestamp, 0)
+		entry.LastModified = time.Unix(unixTimestamp, 0)
 	}
-	return e, err
+	return entry, err
 }
 
-func (c Cache) upsertEntry(e clob.Entry) (err error) {
-	if err = c.insertEntry(e); err != nil {
-		err = c.updateEntry(e)
+func (cache Cache) upsertEntry(entry clob.Entry) (err error) {
+	if err = cache.insertEntry(entry); err != nil {
+		err = cache.updateEntry(entry)
 	}
 	return
 }
 
-func (c Cache) updateEntry(e clob.Entry) (err error) {
+func (cache Cache) updateEntry(entry clob.Entry) (err error) {
 	// Try fetching existing entry
-	if existingEntry, err := c.selectEntry(e.Key); err == nil {
-		cols, vals := compareEntries(existingEntry, e)
+	if existingEntry, err := cache.selectEntry(entry.Key); err == nil {
+		cols, vals := compareEntries(existingEntry, entry)
 		for i, col := range cols {
-			_, err = c.db.Exec(fmt.Sprintf(sqlUpdateEntryViaKey, col), vals[i], e.Key)
+			_, err = cache.db.Exec(fmt.Sprintf(sqlUpdateEntryViaKey, col), vals[i], entry.Key)
 		}
 	}
 	return
 }
 
-func (c Cache) insertEntry(e clob.Entry) (err error) {
+func (cache Cache) insertEntry(entry clob.Entry) (err error) {
 	var result sql.Result
-	if e.Body == nil {
-		result, err = c.db.Exec(
+	if entry.Body == nil {
+		result, err = cache.db.Exec(
 			sqlInsertEntryBase,
-			e.Key,
-			e.ParentKey,
-			e.Name,
-			e.Type,
+			entry.Key,
+			entry.ParentKey,
+			entry.Name,
+			entry.Type,
 		)
 	} else {
-		result, err = c.db.Exec(
+		result, err = cache.db.Exec(
 			sqlInsertEntryComplete,
-			e.Key,
-			e.ParentKey,
-			e.Name,
-			e.Type,
-			e.Size,
-			e.LastModified.Unix(),
+			entry.Key,
+			entry.ParentKey,
+			entry.Name,
+			entry.Type,
+			entry.Size,
+			entry.LastModified.Unix(),
 		)
 	}
 	if err == nil {
@@ -283,14 +290,14 @@ func (c Cache) insertEntry(e clob.Entry) (err error) {
 	return
 }
 
-func (c Cache) deleteEntry(e clob.Entry) (err error) {
-	_, err = c.db.Exec(sqlDeleteEntry, e.Key)
+func (cache Cache) deleteEntry(entry clob.Entry) (err error) {
+	_, err = cache.db.Exec(sqlDeleteEntry, entry.Key)
 	return
 }
 
-func (c Cache) insertJob(key string, action int) (err error) {
+func (cache Cache) insertJob(key string, action int) (err error) {
 	var result sql.Result
-	if result, err = c.db.Exec(sqlInsertJob, key, action); err == nil {
+	if result, err = cache.db.Exec(sqlInsertJob, key, action); err == nil {
 		var num int64
 		if num, err = result.RowsAffected(); err == nil && num == 0 {
 			err = errNoRowsChanged
@@ -299,13 +306,13 @@ func (c Cache) insertJob(key string, action int) (err error) {
 	return
 }
 
-func (c Cache) selectNextJob() (j Job, err error) {
-	err = c.db.QueryRow(sqlGetNextJob).Scan(&j.ID, &j.Key, &j.Action)
+func (cache Cache) selectNextJob() (j Job, err error) {
+	err = cache.db.QueryRow(sqlGetNextJob).Scan(&j.ID, &j.Key, &j.Action)
 	return
 }
 
-func (c Cache) deleteJob(j Job) (err error) {
-	_, err = c.db.Exec(sqlDeleteJob, j.ID)
+func (cache Cache) deleteJob(j Job) (err error) {
+	_, err = cache.db.Exec(sqlDeleteJob, j.ID)
 	return err
 }
 

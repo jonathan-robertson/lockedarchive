@@ -81,9 +81,9 @@ var (
 )
 
 // OpenCabinet returns a cabinet, if possible, complete with a loaded entries map; LOCKS
-func OpenCabinet(name, pass string, client Client) (c *Cabinet, err error) {
+func OpenCabinet(name, pass string, client Client) (cabinet *Cabinet, err error) {
 	if cache, err := localstorage.Open(name); err == nil {
-		c = &Cabinet{
+		cabinet = &Cabinet{
 			Name:          name,
 			cache:         cache,
 			password:      pass,
@@ -99,44 +99,44 @@ func OpenCabinet(name, pass string, client Client) (c *Cabinet, err error) {
 	go func() {
 		defer close(done)
 		for entry := range entries {
-			if cacheErr := c.cache.RememberEntry(entry); cacheErr != nil {
+			if cacheErr := cabinet.cache.RememberEntry(entry); cacheErr != nil {
 				log.Println(cacheErr) // TODO: use more permanent logging solution
 			}
 		}
 	}()
 
 	// REVIEW: maybe add logic here to choose between multiple plugins based on Listing/Get cost
-	err = client.List("", entries)
+	err = cabinet.client.List("", entries)
 	close(entries) // indicate no new entries will be added
 	<-done         // wait for mapping to complete
 
 	// Setup JobProcessor pool
 	for i := 0; i < configWorkerCount; i++ {
-		c.processorPool <- JobProcessor{cabinet: c}
+		cabinet.processorPool <- JobProcessor{cabinet: cabinet}
 	}
-	go c.monitorJobs()
+	go cabinet.monitorJobs()
 
-	return c, err // return err if one exists
+	return cabinet, err // return err if one exists
 }
 
 // Close triggers the shutdown of the cabinet's workers and closure of the cache db
-func (c *Cabinet) Close() error {
-	c.shutdownFlag = true
+func (cabinet *Cabinet) Close() error {
+	cabinet.shutdownFlag = true
 
 	processorsShutDown := 0
-	for _ = range c.shutdownPool {
+	for _ = range cabinet.shutdownPool {
 		if processorsShutDown++; processorsShutDown == configWorkerCount {
 			break
 		}
 	}
-	return c.cache.Close()
+	return cabinet.cache.Close()
 }
 
 // monitorJobs loops over processors and and assigns jobs to them as they become available
-func (c Cabinet) monitorJobs() {
-	for jp := range c.processorPool {
+func (cabinet Cabinet) monitorJobs() {
+	for jp := range cabinet.processorPool {
 		for {
-			if job, err := c.cache.DequeueJob(); err == nil {
+			if job, err := cabinet.cache.DequeueJob(); err == nil {
 				go jp.Process(job) // dispatch processor to handle job
 				break              // get for next available processor
 			} else {
@@ -147,39 +147,39 @@ func (c Cabinet) monitorJobs() {
 }
 
 // assignKey generates and assigns a new, unused key to entry
-func (c Cabinet) assignKey(e clob.Entry) clob.Entry {
+func (cabinet Cabinet) assignKey(entry clob.Entry) clob.Entry {
 	newKey := rootKey
-	for c.keyExists(newKey) {
+	for cabinet.keyExists(newKey) {
 		newKey = generateKey()
 	}
 
-	e.Key = newKey // set new, unused key to entry
-	return e
+	entry.Key = newKey // set new, unused key to entry
+	return entry
 }
 
 // keyExists returns existence of key in entries or if key is the root key
-func (c Cabinet) keyExists(key string) (exists bool) {
-	return key == rootKey || c.cache.ContainsEntry(key)
+func (cabinet Cabinet) keyExists(key string) (exists bool) {
+	return key == rootKey || cabinet.cache.ContainsEntry(key)
 }
 
 // upsert updates or inserts entry safely into cache
-func (c *Cabinet) upsert(e clob.Entry) (clob.Entry, error) {
+func (cabinet *Cabinet) upsert(entry clob.Entry) (clob.Entry, error) {
 
 	// Verify parent exists
-	if !c.keyExists(e.ParentKey) {
-		return e, errParentDoesNotExist
+	if !cabinet.keyExists(entry.ParentKey) {
+		return entry, errParentDoesNotExist
 	}
 
 	// Generate new key if necessary and assign to
-	if e.Key == "" {
-		e = c.assignKey(e)
+	if entry.Key == "" {
+		entry = cabinet.assignKey(entry)
 	}
 
-	return e, c.cache.RememberEntry(e) // remember entry in cache
+	return entry, cabinet.cache.RememberEntry(entry) // remember entry in cache
 }
 
 // QueueEntryForUpload prepares the file/dir for upload
-func (c Cabinet) QueueEntryForUpload(parentKey string, dirent *os.File) (entry clob.Entry, err error) {
+func (cabinet Cabinet) QueueEntryForUpload(parentKey string, dirent *os.File) (entry clob.Entry, err error) {
 	defer dirent.Close()
 
 	// Extract metadata
@@ -224,38 +224,38 @@ func (c Cabinet) QueueEntryForUpload(parentKey string, dirent *os.File) (entry c
 	}
 
 	// Cache entry and data
-	if entry, err = c.upsert(entry); err == nil {
-		err = c.cache.EnqueueJob(entry.Key, localstorage.ActionUpload) // queue upload job
+	if entry, err = cabinet.upsert(entry); err == nil {
+		err = cabinet.cache.EnqueueJob(entry.Key, localstorage.ActionUpload) // queue upload job
 	}
 
 	return
 }
 
 // UploadEntry receives an Entry without key, assigns key, and updates cache
-func (c Cabinet) UploadEntry(e clob.Entry) error {
-	return c.client.Upload(e) // REVIEW: should cache delete cached file data after upload complete?
+func (cabinet Cabinet) UploadEntry(entry clob.Entry) error {
+	return cabinet.client.Upload(entry) // REVIEW: should cache delete cached file data after upload complete?
 }
 
 // DeleteEntry removes an existing entry from the cabinet
-func (c Cabinet) DeleteEntry(e clob.Entry) error {
-	if err := c.cache.ForgetEntry(e); err != nil { // Remove from cache
+func (cabinet Cabinet) DeleteEntry(entry clob.Entry) error {
+	if err := cabinet.cache.ForgetEntry(entry); err != nil { // Remove from cache
 		log.Println(err) // TODO: use more permanent logging solution
 		return err       // REVIEW: sure we want to abort on cache forget error?
 	}
-	return c.client.Delete(e) // Delete from client
+	return cabinet.client.Delete(entry) // Delete from client
 }
 
 // DownloadEntry retrieves the file data from client
-func (c Cabinet) DownloadEntry(entry clob.Entry) (err error) {
-	if err = c.client.OpenDownstream(&entry); err == nil {
-		err = c.cache.RememberEntry(entry)
+func (cabinet Cabinet) DownloadEntry(entry clob.Entry) (err error) {
+	if err = cabinet.client.OpenDownstream(&entry); err == nil {
+		err = cabinet.cache.RememberEntry(entry)
 	}
 	return
 }
 
 // LookupEntry retrieves an existing entry from the cabinet
-func (c Cabinet) LookupEntry(key string) (e clob.Entry, err error) {
-	if e, err = c.cache.RecallEntry(key); err == sql.ErrNoRows {
+func (cabinet Cabinet) LookupEntry(key string) (entry clob.Entry, err error) {
+	if entry, err = cabinet.cache.RecallEntry(key); err == sql.ErrNoRows {
 		// REVIEW: try fetching this key from client, then Remember it in cache and return?
 	}
 	return

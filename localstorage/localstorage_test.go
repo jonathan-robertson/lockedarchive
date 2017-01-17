@@ -12,7 +12,7 @@ const (
 )
 
 var (
-	cache     = Cache{Cabinet: testCab}
+	cache     Cache
 	testEntry = clob.Entry{
 		Key:       "5678",
 		ParentKey: "1234",
@@ -21,9 +21,11 @@ var (
 	}
 )
 
+// TODO: Fix localstorage
+
 func TestNew(t *testing.T) {
 	var err error
-	if cache, err = New(testCab); err != nil {
+	if cache, err = Open(testCab); err != nil {
 		t.Fatal(err)
 	}
 
@@ -45,29 +47,29 @@ func TestRememberEntry(t *testing.T) {
 	}
 	t.Log("stats received from file")
 
-	e := testEntry // copy
-	e.Name = filename
-	e.Size = fileInfo.Size()
-	e.LastModified = fileInfo.ModTime()
-	e.Body = file
+	entry := testEntry // copy
+	entry.Name = filename
+	entry.Size = fileInfo.Size()
+	entry.LastModified = fileInfo.ModTime()
+	entry.Body = file
 
-	if err := cache.RememberEntry(e); err != nil {
+	if err := cache.RememberEntry(entry); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("entry with file stats and file data remembered by cache\n%+v\n", e)
+	t.Logf("entry with file stats and file data remembered by cache\n%+v\n", entry)
 }
 
 func TestRecallEntry(t *testing.T) {
-	e, err := cache.RecallEntry(testEntry.Key)
+	entry, err := cache.RecallEntry(testEntry.Key)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if e.Type != testEntry.Type {
+	if entry.Type != testEntry.Type {
 		t.Fatal("types do not match")
 	}
 
-	t.Logf("entry retrieved\n%+v\n", e)
+	t.Logf("entry retrieved\n%+v\n", entry)
 }
 
 func TestForgetEntry(t *testing.T) {

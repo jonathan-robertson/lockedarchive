@@ -54,7 +54,7 @@ func TestCreateBucket(t *testing.T) {
 }
 
 func TestUpload(t *testing.T) {
-	e := clob.Entry{
+	entry := clob.Entry{
 		Key:          testKey,
 		ParentKey:    rootKey,
 		Name:         "boom.txt",
@@ -64,7 +64,7 @@ func TestUpload(t *testing.T) {
 		Body:         ioutil.NopCloser(bytes.NewReader(testBody)),
 	}
 
-	if err := client.Upload(e); err != nil {
+	if err := client.Upload(entry); err != nil {
 		t.Fatal(err)
 	}
 	t.Log("uploaded key", testKey)
