@@ -29,7 +29,7 @@ var (
 	exampleIndex bleve.Index
 )
 
-func getContents() (fc FileContents, err error) {
+func getPDFContents() (fc FileContents, err error) {
 	body, err := textify.PDF(filename, "\n")
 	if err != nil {
 		return
@@ -51,22 +51,14 @@ func getContents() (fc FileContents, err error) {
 }
 
 // setup creates index and loads it with default values
-func setup() error {
-	contents, err := getContents()
-	if err != nil {
-		return err
-	}
-	contents.ID = "thisIsTheId"
-
+func setup(t *testing.T) {
+	var err error
 	mapping := bleve.NewIndexMapping()
 	if exampleIndex, err = bleve.New(indexName, mapping); err != nil {
 		if exampleIndex, err = bleve.Open(indexName); err != nil {
-			return err
+			t.Fatal(err)
 		}
 	}
-
-	exampleIndex.Index(contents.ID, contents)
-	return nil
 }
 
 // teardown removes index and contents
@@ -81,12 +73,20 @@ func teardown(t *testing.T) {
 
 func TestMain(t *testing.T) {
 	defer teardown(t)
-	if err := setup(); err != nil {
+	setup(t)
+
+	t.Run("IndexPDF", func(t *testing.T) { IndexPDF(t) })
+	t.Run("IndexSearch", func(t *testing.T) { IndexSearch(t) })
+	t.Run("Highlight", func(t *testing.T) { HighlightMatches(t) })
+}
+
+func IndexPDF(t *testing.T) {
+	contents, err := getPDFContents()
+	if err != nil {
 		t.Fatal(err)
 	}
-
-	t.Run("Index", func(t *testing.T) { IndexSearch(t) })
-	t.Run("Highlight", func(t *testing.T) { HighlightMatches(t) })
+	contents.ID = "exampleID"
+	exampleIndex.Index(contents.ID, contents)
 }
 
 func IndexSearch(t *testing.T) {
