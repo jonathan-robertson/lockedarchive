@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/blevesearch/bleve"
-	"github.com/puddingfactory/textify"
 )
 
 type FileContents struct {
@@ -21,41 +20,28 @@ type FileContents struct {
 }
 
 const (
-	indexName = "example.bleve"
-	filename  = "testing/test.pdf"
+	indexName = "test.bleve"
+
+	testBody = `you never get enough of them
+there is nothing you could say to get rid of them
+fish is great, it is lovely
+it is the answer to our prayers
+this is none other like you
+nobody compares to you
+oh how I love you
+fish`
 )
 
 var (
-	exampleIndex bleve.Index
+	testIndex bleve.Index
 )
-
-func getPDFContents() (fc FileContents, err error) {
-	body, err := textify.PDF(filename, "\n")
-	if err != nil {
-		return
-	}
-
-	info, err := os.Stat(filename)
-	if err != nil {
-		return
-	}
-
-	fc = FileContents{
-		IsDir:   info.IsDir(),
-		ModTime: info.ModTime(),
-		Name:    info.Name(),
-		Size:    info.Size(),
-		Body:    body,
-	}
-	return
-}
 
 // setup creates index and loads it with default values
 func setup(t *testing.T) {
 	var err error
 	mapping := bleve.NewIndexMapping()
-	if exampleIndex, err = bleve.New(indexName, mapping); err != nil {
-		if exampleIndex, err = bleve.Open(indexName); err != nil {
+	if testIndex, err = bleve.New(indexName, mapping); err != nil {
+		if testIndex, err = bleve.Open(indexName); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -63,7 +49,7 @@ func setup(t *testing.T) {
 
 // teardown removes index and contents
 func teardown(t *testing.T) {
-	if err := exampleIndex.Close(); err != nil {
+	if err := testIndex.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.RemoveAll(indexName); err != nil {
@@ -75,25 +61,22 @@ func TestMain(t *testing.T) {
 	defer teardown(t)
 	setup(t)
 
-	t.Run("IndexPDF", func(t *testing.T) { IndexPDF(t) })
-	t.Run("IndexSearch", func(t *testing.T) { IndexSearch(t) })
+	t.Run("IndexText", func(t *testing.T) { IndexText(t) })
+	t.Run("SearchIndex", func(t *testing.T) { SearchIndex(t) })
 	t.Run("Highlight", func(t *testing.T) { HighlightMatches(t) })
 }
 
-func IndexPDF(t *testing.T) {
-	contents, err := getPDFContents()
-	if err != nil {
+func IndexText(t *testing.T) {
+	if err := testIndex.Index("example", FileContents{Body: testBody}); err != nil {
 		t.Fatal(err)
 	}
-	contents.ID = "exampleID"
-	exampleIndex.Index(contents.ID, contents)
 }
 
-func IndexSearch(t *testing.T) {
-	query := bleve.NewQueryStringQuery("contact")
+func SearchIndex(t *testing.T) {
+	query := bleve.NewQueryStringQuery("fish")
 	searchRequest := bleve.NewSearchRequest(query)
 
-	searchResult, err := exampleIndex.Search(searchRequest)
+	searchResult, err := testIndex.Search(searchRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,17 +84,27 @@ func IndexSearch(t *testing.T) {
 }
 
 func HighlightMatches(t *testing.T) {
-	query := bleve.NewMatchQuery("contact")
+	query := bleve.NewMatchQuery("fish")
 	searchRequest := bleve.NewSearchRequest(query)
 	searchRequest.Highlight = bleve.NewHighlight()
-	searchResults, err := exampleIndex.Search(searchRequest)
+	searchResults, err := testIndex.Search(searchRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	for i, hit := range searchResults.Hits {
-		t.Logf("HIT %d: %+v\n", i, hit.Fragments["Body"])
+	for _, hit := range searchResults.Hits {
+		t.Logf(
+			"HIT: %d, ID: %s, Score: %f\n%+v\n",
+			hit.HitNumber, hit.ID, hit.Score, hit.Fragments,
+		)
 	}
 	// Output:
-	// great <mark>nameless</mark> one
+	// HIT: 1, ID: example, Score: 0.079229
+	// map[Body:[<mark>fish</mark> is great, it is lovely
+	// you never get enough of them
+	// there is nothing you could say to get rid of them
+	// it is the answer to our prayers
+	// this is none other like you
+	// nobody compares to you
+	// oh how I l…]]
 }
