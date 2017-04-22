@@ -3,6 +3,7 @@ package cache
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 )
@@ -57,6 +58,9 @@ func setup(t *testing.T) {
 
 func cleanup(t *testing.T) {
 	if err := Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(testDatabaseName); err != nil {
 		t.Fatal(err)
 	}
 }
