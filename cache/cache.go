@@ -4,6 +4,7 @@ package cache
 import (
 	"bytes"
 	"compress/gzip"
+	"io"
 	"io/ioutil"
 	"os"
 
@@ -13,7 +14,7 @@ import (
 // TODO: init should reach out for the user's configuration to get key
 var key *[32]byte // temporary key
 
-// Write file to the cache; closes file
+// Write compresses and encrypts file, writing it to the cache; closes file
 func Write(source, destination *os.File) (err error) {
 
 	// Read all contents of file
@@ -44,7 +45,7 @@ func Write(source, destination *os.File) (err error) {
 	return destination.Close()
 }
 
-// Read file from the cache if it exists
+// Read decrypts and decompresses file, returning plaintext
 func Read(name string) (plaintext []byte, err error) {
 
 	// Get file if exists
@@ -77,6 +78,27 @@ func Read(name string) (plaintext []byte, err error) {
 	}
 
 	return
+}
+
+// Put adds a file to the cache without any modifications
+// This is best used with data received from cloud storage
+// TODO: update to use cache path
+func Put(name string, rc io.ReadCloser) (err error) {
+	file, err := os.Create(name)
+	if err != nil {
+		return
+	}
+
+	_, err = io.Copy(file, rc)
+	file.Close()
+	return
+}
+
+// Get returns readCloser to a cached file; caller responsible for closing
+// This is best used for providing cloud storage the bytes to transmit
+// TODO: update to use cache path
+func Get(name string) (*os.File, error) {
+	return os.Open(name)
 }
 
 // compress responsible for compressing contents of a file
