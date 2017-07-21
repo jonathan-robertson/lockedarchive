@@ -8,7 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/puddingfactory/lockedarchive/cryptopasta"
+	"github.com/gtank/cryptopasta"
 )
 
 // TODO: init should reach out for the user's configuration to get key

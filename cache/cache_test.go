@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/puddingfactory/lockedarchive/cryptopasta"
+	"github.com/gtank/cryptopasta"
 )
 
 const (
