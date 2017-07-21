@@ -47,18 +47,19 @@ func (client AS3) RemoveArchive() error {
 	return evalErr(err)
 }
 
-// List collects all list data for the given bucket
-func (client AS3) List() (entries []Entry, err error) {
+// List collects all list data for the given bucket; closes Entry chan when done
+func (client AS3) List(entries chan Entry) error {
+	defer close(entries)
 	input := &s3.ListObjectsV2Input{
 		Bucket: aws.String(client.Bucket),
 	}
-	return entries, evalErr(client.svc().ListObjectsV2Pages(input, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
+	return evalErr(client.svc().ListObjectsV2Pages(input, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
 		for _, obj := range page.Contents {
-			entries = append(entries, Entry{
+			entries <- Entry{
 				Key:          aws.StringValue(obj.Key),
 				Size:         aws.Int64Value(obj.Size),
 				LastModified: aws.TimeValue(obj.LastModified),
-			})
+			}
 		}
 		return aws.BoolValue(page.IsTruncated)
 	}))

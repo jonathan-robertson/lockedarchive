@@ -12,7 +12,7 @@ type Client interface {
 	CreateArchive() error
 	RemoveArchive() error
 
-	List() ([]Entry, error)
+	List(chan Entry) error
 
 	Upload(Entry) error
 	Download(Entry) error
