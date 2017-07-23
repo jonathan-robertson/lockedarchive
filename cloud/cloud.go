@@ -2,7 +2,11 @@
 package cloud
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"time"
+
+	"github.com/gtank/cryptopasta"
 )
 
 // Client represents an object storage provider's service
@@ -15,6 +19,7 @@ type Client interface {
 	List(chan Entry) error
 
 	Upload(Entry) error
+	Head(Entry) error
 	Download(Entry) error
 	Update(Entry) error
 	Delete(Entry) error
@@ -25,14 +30,46 @@ type Client interface {
 
 // Entry represents a standard object compatible with cloud operations
 type Entry struct {
-	Key string // Key representing this Entry
+	Key string `json:"-"` // Key representing this Entry
 
-	ParentKey    string    // Key representing Entry containing this one
-	Name         string    // Name of this Entry
-	IsDir        bool      // Whether or not this Entry contains others
-	Size         int64     // Size of Entry's data
-	LastModified time.Time // Last time Entry was updated
+	ParentKey    string    `json:"p"` // Key representing Entry containing this one
+	Name         string    `json:"n"` // Name of this Entry
+	IsDir        bool      `json:"d"` // Whether or not this Entry contains others
+	Size         int64     `json:"s"` // Size of Entry's data
+	LastModified time.Time `json:"m"` // Last time Entry was updated
 
 	// TODO: add these in later
 	// Tags []string
+}
+
+// Meta returns Entry's encrypted metadata
+func (entry Entry) Meta(key *[32]byte) (encryptedMeta string, err error) {
+	// TODO: get key
+	// var key *[32]byte
+	// cryptopasta.Encrypt([]byte())
+
+	plaintext, err := json.Marshal(entry)
+	if err != nil {
+		return
+	}
+
+	ciphertext, err := cryptopasta.Encrypt(plaintext, key)
+
+	return base64.StdEncoding.EncodeToString(ciphertext), err
+}
+
+// UpdateMeta reads in encrypted metadata and translates it to Entry's fields
+// TODO: Update to no longer receive key - pull it from config
+func (entry *Entry) UpdateMeta(encryptedMeta string, key *[32]byte) error {
+	decoded, err := base64.StdEncoding.DecodeString(encryptedMeta)
+	if err != nil {
+		return err
+	}
+
+	plaintext, err := cryptopasta.Decrypt(decoded, key)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(plaintext, entry)
 }

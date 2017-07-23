@@ -16,17 +16,24 @@ func TestAS3(t *testing.T) {
 			t.Error(err)
 		}
 	})
+	t.Run("Head", func(t *testing.T) {
+		if err := client.Head(entry); err != nil {
+			t.Error(err)
+		}
+	})
 	t.Run("Download", func(t *testing.T) {
 		if err := client.Download(entry); err != nil {
 			t.Error(err)
 		}
 	})
 	t.Run("List", func(t *testing.T) {
-		entries, err := client.List()
-		if err != nil {
-			t.Error(err)
-		}
-		for _, entry := range entries {
+		entries := make(chan Entry)
+		go func() {
+			if err := client.List(entries); err != nil {
+				t.Error(err)
+			}
+		}()
+		for entry := range entries {
 			t.Logf("list: %+v", entry)
 		}
 	})

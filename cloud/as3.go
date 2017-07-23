@@ -115,8 +115,32 @@ func (client AS3) Download(entry Entry) (err error) {
 	return
 }
 
+// Head
+func (client AS3) Head(entry Entry) error {
+	input := &s3.HeadObjectInput{
+		Bucket: aws.String(client.Bucket),
+		Key:    aws.String(entry.Key),
+	}
+
+	result, err := client.svc().HeadObject(input)
+	if err != nil {
+		return evalErr(err)
+	}
+
+	entry.LastModified = aws.TimeValue(result.LastModified)
+	// TODO: if result.ETag differs from local checksum, remove cached version
+	// TODO: receive tags
+
+	// Metadata map[string]*string `location:"headers" locationName:"x-amz-meta-" type:"map"`
+
+	fmt.Printf("lameta: %s\n", aws.StringValue(result.Metadata["lameta"]))
+
+	return nil
+}
+
 //
-func (client AS3) Update(Entry) error {
+func (client AS3) Update(entry Entry) error {
+
 	return nil
 }
 
