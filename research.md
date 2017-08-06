@@ -28,7 +28,7 @@ Provide a free*, **secure**, easy way to archive data online. Get sensitive data
 
 ### Storing File Data
 
-The tentative plan is to store each file (after encryption and then compression) as an object in S3 (with other storage providers added later if it makes sense to do so).
+The tentative plan is to store each file (after compression and then encryption) as an object in S3 (with other storage providers added later if it makes sense to do so).
 
 ### File Versioning
 
@@ -40,7 +40,7 @@ The Key for this would be a UUID (generated at the time of queuing for upload) a
 
 ### Storing Metadata
 
-In the Metadata would be custom fields for Name, parentKey (an empty key representing a directory), size (recorded before encryption & compression), and other goodies, like tagging which I'm a big fan of as well. Risky metadata values (like name) are encrypted before upload, too. Even metadata can be an information leak, and I wouldn't want that to expose user info.
+In the Metadata would be custom fields for Name, parentKey (an empty key representing a directory), size (recorded before compression & encryption), and other goodies, like tagging which I'm a big fan of as well. Risky metadata values (like name) are encrypted before upload, too. Even metadata can be an information leak, and I wouldn't want that to expose user info.
 
 ### Caching Metadata
 
