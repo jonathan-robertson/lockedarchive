@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"io"
@@ -91,12 +92,13 @@ func TestBasicStream(t *testing.T) {
 	}
 }
 
-func TestStream(t *testing.T) {
+func TestEncryption(t *testing.T) {
 	var (
 		err            error
 		ctx, cancelCtx = context.WithCancel(context.Background())
-		pr, pw         = io.Pipe() // used to route output from encrypt into input for decrypt
-		key, src, dst  = setup(t)  // build setup objects
+		pr, pw         = io.Pipe()     // used to route output from encrypt into input for decrypt
+		src, dst       = setup(t)      // build setup objects
+		key            = GenerateKey() // encryption key to use for this test
 	)
 
 	go func() {
@@ -109,11 +111,14 @@ func TestStream(t *testing.T) {
 		cancelCtx()
 	}
 
-	// close files before errors are acted on
-	src.Close()
-	dst.Close()
-
 	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = src.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = dst.Close(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -122,10 +127,64 @@ func TestStream(t *testing.T) {
 	teardown(t)
 }
 
-// setup returns some starting objects; USER RESPONSIBLE FOR CLOSING src and dst
-func setup(t *testing.T) (*[KeySize]byte, *os.File, *os.File) {
-	key := GenerateKey()
+func TestCompression(t *testing.T) {
+	src, err := os.Open(sourceFilename)
+	if err != nil {
+		t.Fatal(err)
+	}
 
+	mahZip, err := os.OpenFile(destFilename+".zip", os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := bufio.NewReader(src)
+	written, err := CompressStream(r, mahZip)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := src.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := mahZip.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("%d bytes compressed", written)
+}
+
+func TestDecompression(t *testing.T) {
+	src, err := os.Open(destFilename + ".zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dst, err := os.OpenFile(destFilename, os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := bufio.NewReader(src)
+	written, err := DecompressStream(r, dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := src.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := dst.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("%d bytes decompressed", written)
+}
+
+// setup returns some starting objects; USER RESPONSIBLE FOR CLOSING src and dst
+func setup(t *testing.T) (*os.File, *os.File) {
 	src, err := os.Open(sourceFilename)
 	if err != nil {
 		t.Fatal(err)
@@ -135,7 +194,7 @@ func setup(t *testing.T) (*[KeySize]byte, *os.File, *os.File) {
 		t.Fatal(err)
 	}
 
-	return key, src, dst
+	return src, dst
 }
 
 func teardown(t *testing.T) {

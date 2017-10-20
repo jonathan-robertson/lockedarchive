@@ -2,6 +2,7 @@
 package cache
 
 import (
+	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -157,8 +158,40 @@ func DecryptStream(ctx context.Context, key *[KeySize]byte, r io.Reader, w io.Wr
 	}
 }
 
-func CompressStream()   {} // TODO
-func DecompressStream() {} // TODO
+// CompressStream compresses a stream of data
+// TODO: Update to return an io.reader or io.writer?
+func CompressStream(r io.Reader, w io.Writer) (written int64, err error) {
+	zw := gzip.NewWriter(w)
+
+	written, err = io.Copy(zw, r)
+	if err != nil {
+		return
+	}
+
+	if err = zw.Flush(); err != nil {
+		return
+	}
+
+	err = zw.Close()
+	return
+}
+
+// DecompressStream decompresses a stream of data
+// TODO: Update to return an io.reader or io.writer?
+func DecompressStream(r io.Reader, w io.Writer) (written int64, err error) {
+	zr, err := gzip.NewReader(r)
+	if err != nil {
+		return
+	}
+
+	written, err = io.Copy(w, zr)
+	if err != nil {
+		return
+	}
+
+	err = zr.Close()
+	return
+}
 
 // // TODO: init should reach out for the user's configuration to get key
 // var key *[32]byte // temporary key
