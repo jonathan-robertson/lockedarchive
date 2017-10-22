@@ -2,195 +2,108 @@
 package cache
 
 import (
-	"compress/gzip"
 	"context"
-	"crypto/rand"
-	"errors"
 	"io"
+	"os"
+	"strings"
 
-	"golang.org/x/crypto/nacl/secretbox"
+	"github.com/jonathan-robertson/lockedarchive/stream"
 )
 
-const (
-	// KeySize represents the size of the key in bytes
-	KeySize = 32 // 256-bit
-
-	// NonceSize represents the size of the nonce in bytes
-	NonceSize = 24 // 192-bit
-
-	// ChunkSize represents the size of each encrypted chunk in bytes
-	ChunkSize = 16384 // 16kb
-)
-
-var (
-	// ErrEncrypt is an error that occurred during encryption
-	ErrEncrypt = errors.New("secret: encryption failed")
-
-	// ErrDecrypt is an error that occurred during decryption
-	ErrDecrypt = errors.New("secret: decryption failed")
-)
-
-// REVIEW: https://leanpub.com/gocrypto/read#leanpub-auto-nacl
-
-// GenerateKey creates a new random secret key and panics if the source
-// of randomness fails
-// TODO: harvest more entropy?
-func GenerateKey() *[KeySize]byte {
-	key := new([KeySize]byte)
-	if _, err := io.ReadFull(rand.Reader, key[:]); err != nil {
-		panic(err)
+// Encode compresses and encrypts a file at provided path, writing it to the cache
+func Encode(source string, key [stream.KeySize]byte) error {
+	src, err := os.Open(source)
+	if err != nil {
+		return err
 	}
-	return key
-}
+	defer src.Close()
 
-// GenerateNonce creates a new random nonce and panics if the source of
-// randomness fails
-func GenerateNonce() *[NonceSize]byte {
-	nonce := new([NonceSize]byte)
-	if _, err := io.ReadFull(rand.Reader, nonce[:]); err != nil {
-		panic(err)
+	dst, err := os.OpenFile(src.Name()+".la", os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		return err
 	}
-	return nonce
-}
+	defer dst.Close()
 
-// Encrypt generates a random nonce and encrypts the input using
-// NaCl's secretbox package. The nonce is prepended to the ciphertext.
-// A sealed message will the same size as the original message plus
-// secretbox.Overhead bytes long.
-// REVIEW: Keep in mind that random nonces are not always the right choice.
-// We’ll talk more about this in a chapter on key exchanges, where we’ll talk
-// about how we actually get and share the keys that we’re using.
-func Encrypt(key *[KeySize]byte, message []byte) ([]byte, error) {
-	nonce := GenerateNonce()
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	ctx, cancel := context.WithCancel(context.Background())
 
-	out := make([]byte, len(nonce))
-	copy(out, nonce[:])
-	out = secretbox.Seal(out, message, nonce, key)
-	return out, nil
-}
-
-// Decrypt extracts the nonce from the ciphertext, and attempts to
-// decrypt with NaCl's secretbox.
-func Decrypt(key *[KeySize]byte, message []byte) ([]byte, error) {
-	if len(message) < (NonceSize + secretbox.Overhead) {
-		return nil, ErrDecrypt
-	}
-
-	var nonce [NonceSize]byte
-	copy(nonce[:], message[:NonceSize])
-	out, ok := secretbox.Open(nil, message[NonceSize:], &nonce, key)
-	if !ok {
-		return nil, ErrDecrypt
-	}
-
-	return out, nil
-}
-
-// REVIEW: https://blog.cloudflare.com/recycling-memory-buffers-in-go/
-// manage memory carefully
-// TODO: https://stackoverflow.com/questions/16971741/how-do-you-clear-a-slice-in-go
-// I love you, internet
-
-// EncryptStream encrypts a stream of data in chunks
-// TODO: explore async options - probably use io.ReadSeeker
-// TODO: update to generate initial nonce, then increment for subsequent chunks
-func EncryptStream(ctx context.Context, key *[KeySize]byte, r io.Reader, w io.Writer) error {
-	chunk := make([]byte, ChunkSize)
-	// nonce := GenerateNonce()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-
-		default:
-			len, err := r.Read(chunk)
-			if err != nil {
-				if err == io.EOF {
-					return nil
-				}
-				return err
-			}
-
-			encryptedChunk, err := Encrypt(key, chunk[:len])
-			if err != nil {
-				return err
-			}
-
-			len, err = w.Write(encryptedChunk)
-			if err != nil {
-				return err
-			}
+	// Compress data
+	var compressionErr error
+	go func() {
+		if _, compressionErr = stream.Compress(src, pw); compressionErr != nil {
+			cancel()
 		}
-	}
-}
-
-// DecryptStream decrypts a stream of data in chunks
-// TODO: explore async options - probably use io.ReadSeeker
-// TODO: update to generate initial nonce, then increment for subsequent chunks
-func DecryptStream(ctx context.Context, key *[KeySize]byte, r io.Reader, w io.Writer) error {
-	chunk := make([]byte, ChunkSize)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-
-		default:
-			len, err := r.Read(chunk)
-			if err != nil {
-				if err == io.EOF {
-					return nil
-				}
-				return err
-			}
-
-			decryptedChunk, err := Decrypt(key, chunk[:len])
-			if err != nil {
-				return err
-			}
-
-			len, err = w.Write(decryptedChunk)
-			if err != nil {
-				return err
-			}
+		if compressionErr = pw.Close(); compressionErr != nil {
+			cancel()
 		}
+	}()
+
+	// Encrypt data
+	if err := stream.Encrypt(ctx, key, pr, dst); err != nil {
+		if err == context.Canceled {
+			return compressionErr
+		}
+		return err
 	}
+
+	return dst.Sync()
 }
 
-// CompressStream compresses a stream of data
-// TODO: Update to return an io.reader or io.writer?
-func CompressStream(r io.Reader, w io.Writer) (written int64, err error) {
-	zw := gzip.NewWriter(w)
-
-	written, err = io.Copy(zw, r)
+// Decode decrypts and decompresses a file at provided path
+func Decode(source string, key [stream.KeySize]byte) error {
+	src, err := os.Open(source)
 	if err != nil {
-		return
+		return err
 	}
+	defer src.Close()
 
-	if err = zw.Flush(); err != nil {
-		return
-	}
-
-	err = zw.Close()
-	return
-}
-
-// DecompressStream decompresses a stream of data
-// TODO: Update to return an io.reader or io.writer?
-func DecompressStream(r io.Reader, w io.Writer) (written int64, err error) {
-	zr, err := gzip.NewReader(r)
+	dst, err := os.OpenFile(strings.TrimSuffix(src.Name(), ".la"), os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
-		return
+		return err
+	}
+	defer dst.Close()
+
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// var decompressionErr error
+	// go func() {
+	// 	_, decompressionErr = stream.Decompress(pr, dst)
+	// 	cancel()
+	// }()
+
+	// if err := stream.Decrypt(ctx, key, src, pw); err != nil {
+	// 	if err == context.Canceled {
+	// 		return decompressionErr
+	// 	}
+	// 	return err
+	// }
+	// if err := pw.Close(); err != nil {
+	// 	return err
+	// }
+
+	// <-ctx.Done()
+	// return dst.Sync()
+
+	// Decrypt data
+	var decryptionErr error
+	go func() {
+		if decryptionErr = stream.Decrypt(ctx, key, src, pw); decryptionErr != nil {
+			cancel() // TODO: THIS DOESN'T DO REALLY ANYTHING
+		}
+		if decryptionErr = pw.Close(); decryptionErr != nil {
+			cancel() // TODO: THIS DOESN'T DO REALLY ANYTHING
+		}
+	}()
+
+	// Decompress data
+	if _, err := stream.Decompress(pr, dst); err != nil {
+		return err
 	}
 
-	written, err = io.Copy(w, zr)
-	if err != nil {
-		return
-	}
-
-	err = zr.Close()
-	return
+	return dst.Sync()
 }
 
 // // TODO: init should reach out for the user's configuration to get key
