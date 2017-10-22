@@ -1,6 +1,8 @@
 package cache_test
 
 import (
+	"bytes"
+	"io/ioutil"
 	"os"
 	"testing"
 
@@ -32,6 +34,34 @@ func TestCache(t *testing.T) {
 	}
 
 	t.Logf("successfully added %s to the cache as %s", decodedFilename, renamedDecodedFilename)
+
+	compareAndCleanup(t, decodedFilename, renamedEncodedFilename, renamedDecodedFilename)
+}
+
+func compareAndCleanup(t *testing.T, srcFilename, wrkFilename, dstFilename string) {
+	srcData, err := ioutil.ReadFile(srcFilename)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dstData, err := ioutil.ReadFile(dstFilename)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(srcData, dstData) {
+		t.Fatalf("%s and %s do not match", srcFilename, dstFilename)
+	}
+
+	t.Log("source and destination match, as expected")
+
+	if err := os.Remove(wrkFilename); err != nil {
+		t.Errorf("trouble removing %s", wrkFilename)
+	}
+
+	if err := os.Remove(dstFilename); err != nil {
+		t.Errorf("trouble removing %s", dstFilename)
+	}
 }
 
 // func setup(t *testing.T) {

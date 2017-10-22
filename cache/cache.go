@@ -18,7 +18,7 @@ func Encode(source string, key [stream.KeySize]byte) error {
 	}
 	defer src.Close()
 
-	dst, err := os.OpenFile(src.Name()+".la", os.O_CREATE|os.O_WRONLY, 0666)
+	dst, err := os.Create(src.Name() + ".la")
 	if err != nil {
 		return err
 	}
@@ -40,7 +40,7 @@ func Encode(source string, key [stream.KeySize]byte) error {
 	}()
 
 	// Encrypt data
-	if err := stream.Encrypt(ctx, key, pr, dst); err != nil {
+	if _, err = stream.Encrypt(ctx, key, pr, dst); err != nil {
 		if err == context.Canceled {
 			return compressionErr
 		}
@@ -58,7 +58,7 @@ func Decode(source string, key [stream.KeySize]byte) error {
 	}
 	defer src.Close()
 
-	dst, err := os.OpenFile(strings.TrimSuffix(src.Name(), ".la"), os.O_CREATE|os.O_WRONLY, 0666)
+	dst, err := os.Create(strings.TrimSuffix(src.Name(), ".la"))
 	if err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func Decode(source string, key [stream.KeySize]byte) error {
 	// Decrypt data
 	var decryptionErr error
 	go func() {
-		if decryptionErr = stream.Decrypt(ctx, key, src, pw); decryptionErr != nil {
+		if _, decryptionErr = stream.Decrypt(ctx, key, src, pw); decryptionErr != nil {
 			cancel() // TODO: THIS DOESN'T DO REALLY ANYTHING
 		}
 		if decryptionErr = pw.Close(); decryptionErr != nil {

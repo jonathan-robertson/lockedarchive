@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -18,8 +19,11 @@ const (
 	// NonceSize represents the size of the nonce in bytes
 	NonceSize = 24 // 192-bit
 
-	// ChunkSize represents the size of each encrypted chunk in bytes
-	ChunkSize = 16384 // 16kb
+	// EncryptionChunkSize represents the number of bytes to encrypt in each chunk
+	EncryptionChunkSize = 3927 // 16kb
+
+	// DecryptionChunkSize represents the number of bytes we need order to decrypt each chunk
+	DecryptionChunkSize = EncryptionChunkSize + NonceSize + secretbox.Overhead
 )
 
 var (
@@ -30,7 +34,7 @@ var (
 	ErrDecrypt = errors.New("secret: decryption failed")
 
 	// ErrEncryptSize is an error that occurred during encryption
-	ErrEncryptSize = fmt.Errorf("encrypt: file is too large to safely encrypt with a %d-byte chunk size", ChunkSize)
+	ErrEncryptSize = fmt.Errorf("encrypt: file is too large to safely encrypt with a %d-byte chunk size", EncryptionChunkSize)
 
 	maxChunkCount = math.Exp2(NonceSize)
 )
@@ -77,6 +81,8 @@ func IncrementNonce(nonce [NonceSize]byte) [NonceSize]byte {
 // We’ll talk more about this in a chapter on key exchanges, where we’ll talk
 // about how we actually get and share the keys that we’re using.
 func EncryptBytes(key [KeySize]byte, nonce [NonceSize]byte, message []byte) ([]byte, error) {
+	fmt.Printf("encrypting chunk of size %d\n", len(message)) // TODO: remove (testing)
+
 	out := make([]byte, len(nonce))
 	copy(out, nonce[:])
 	out = secretbox.Seal(out, message, &nonce, &key)
@@ -86,6 +92,8 @@ func EncryptBytes(key [KeySize]byte, nonce [NonceSize]byte, message []byte) ([]b
 // DecryptBytes extracts the nonce from the ciphertext, and attempts to
 // decrypt with NaCl's secretbox.
 func DecryptBytes(key [KeySize]byte, message []byte) ([]byte, error) {
+	fmt.Printf("decrypting chunk of size %d\n", len(message)) // TODO: remove (testing)
+
 	if len(message) < (NonceSize + secretbox.Overhead) {
 		return nil, ErrDecrypt
 	}
@@ -108,32 +116,63 @@ func DecryptBytes(key [KeySize]byte, message []byte) ([]byte, error) {
 // Encrypt encrypts a stream of data in chunks; CALLER MUST USE TooLargeToChunk
 // to determine if it's safe to finish running this
 // TODO: explore async options - probably use io.ReadSeeker
-// TODO: update to generate initial nonce, then increment for subsequent chunks
-func Encrypt(ctx context.Context, key [KeySize]byte, r io.Reader, w io.Writer) error {
-	chunk := make([]byte, ChunkSize)
+// TODO: Security Issue: TooLargeToChunk can help when the size of stream is known, but when it is now, we need to monitor for repeating Nonce and throw error if one is encountered!!
+func Encrypt(ctx context.Context, key [KeySize]byte, r io.Reader, w io.Writer) (int64, error) {
+	var (
+		singleByte = make([]byte, 1)                                       // used to pull single byte from r
+		buf        = bytes.NewBuffer(make([]byte, 0, EncryptionChunkSize)) // collect bytes for encryption
+		written    int64
+	)
 
 	for nonce := GenerateNonce(); ; nonce = IncrementNonce(nonce) {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return written, ctx.Err()
 
 		default:
-			len, err := r.Read(chunk)
-			if err != nil {
-				if err == io.EOF {
-					return nil
+			// BUG: if slowly receiving bytes (from gzip, for example),
+			// then Read won't get the full chunk size even if there are
+			// more bytes on the way. Instead, it's necessary to buffer
+			// the bytes read until we either hit an err of io.EOF, or
+			// we fill a chunk.
+
+			// Read single byte, return err if non-EOF is received
+			_, readErr := r.Read(singleByte)
+			if readErr != nil && readErr != io.EOF {
+				return written, readErr
+			}
+
+			if readErr != io.EOF {
+				// Add byte to buffer
+				if err := buf.WriteByte(singleByte[0]); err != nil {
+					return written, err
 				}
-				return err
+
+				// See if we have enough data to encrypt
+				if buf.Len() < EncryptionChunkSize {
+					continue // get more data
+				}
 			}
 
-			encryptedChunk, err := EncryptBytes(key, nonce, chunk[:len])
-			if err != nil {
-				return err
-			}
+			// During EOF wrapup, ensure we don't try to encrypt 0 bytes
+			if buf.Len() > 0 {
+				encryptedChunk, err := EncryptBytes(key, nonce, buf.Next(EncryptionChunkSize))
+				if err != nil {
+					fmt.Println("EncryptBytes:", err) // TODO: remove (testing)
+					return written, err
+				}
 
-			len, err = w.Write(encryptedChunk)
-			if err != nil {
-				return err
+				num, err := w.Write(encryptedChunk)
+				if err != nil {
+					fmt.Println("Write:", err) // TODO: remove (testing)
+					return written, err
+				}
+				written += int64(num)
+
+				// Since this was EOF and we had a chance to encrypt the final chunk, it's time to return
+				if readErr == io.EOF {
+					return written, nil
+				}
 			}
 		}
 	}
@@ -142,31 +181,58 @@ func Encrypt(ctx context.Context, key [KeySize]byte, r io.Reader, w io.Writer) e
 // Decrypt decrypts a stream of data in chunks
 // TODO: explore async options - probably use io.ReadSeeker
 // TODO: update to generate initial nonce, then increment for subsequent chunks
-func Decrypt(ctx context.Context, key [KeySize]byte, r io.Reader, w io.Writer) error {
-	chunk := make([]byte, ChunkSize)
+func Decrypt(ctx context.Context, key [KeySize]byte, r io.Reader, w io.Writer) (int64, error) {
+	var (
+		singleByte = make([]byte, 1)                                       // used to pull single byte from r
+		buf        = bytes.NewBuffer(make([]byte, 0, DecryptionChunkSize)) // collect bytes for decryption
+		written    int64                                                   // record how many bytes are written to w
+	)
 
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			fmt.Println("CONTEXT ERROR HIT") // TODO: remove (testing)
+			return written, ctx.Err()
 
 		default:
-			len, err := r.Read(chunk)
-			if err != nil {
-				if err == io.EOF {
-					return nil
+
+			// Read single byte, return err if non-EOF is received
+			_, readErr := r.Read(singleByte)
+			if readErr != nil && readErr != io.EOF {
+				return written, readErr
+			}
+
+			if readErr != io.EOF {
+				// Add byte to buffer
+				if err := buf.WriteByte(singleByte[0]); err != nil {
+					return written, err
 				}
-				return err
+
+				// See if we have enough data to decrypt
+				if buf.Len() < DecryptionChunkSize {
+					continue // get more data
+				}
 			}
 
-			decryptedChunk, err := DecryptBytes(key, chunk[:len])
-			if err != nil {
-				return err
+			// During EOF wrapup, ensure we don't try to decrypt 0 bytes
+			if buf.Len() > 0 {
+				decryptedChunk, err := DecryptBytes(key, buf.Next(DecryptionChunkSize))
+				if err != nil {
+					fmt.Println("DecryptBytes:", err) // TODO: remove (testing)
+					return written, err
+				}
+
+				num, err := w.Write(decryptedChunk)
+				if err != nil {
+					fmt.Println("Write:", err) // TODO: remove (testing)
+					return written, err
+				}
+				written += int64(num)
 			}
 
-			len, err = w.Write(decryptedChunk)
-			if err != nil {
-				return err
+			// Since this was EOF and we had a chance to write decrypt final chunk, it's time to return
+			if readErr == io.EOF {
+				return written, nil
 			}
 		}
 	}
@@ -175,7 +241,7 @@ func Decrypt(ctx context.Context, key [KeySize]byte, r io.Reader, w io.Writer) e
 // TooLargeToChunk determines if a file is too large to safely chunk,
 // considering our ChunkSize and NonceSize
 func TooLargeToChunk(size int64) bool {
-	numOfChunks := (float64)(size / ChunkSize)
+	numOfChunks := (float64)(size / EncryptionChunkSize)
 	if numOfChunks > maxChunkCount {
 		return true
 	}
