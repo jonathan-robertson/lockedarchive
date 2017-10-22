@@ -155,8 +155,17 @@ func Encrypt(ctx context.Context, key [KeySize]byte, r io.Reader, w io.Writer) (
 			}
 
 			// During EOF wrapup, ensure we don't try to encrypt 0 bytes
+			// BUG: buf.Len() will be > 0 if on second chunk or beyond because buf.Next does not remove bytes from buf!!
+			// TODO: get away from using bufio... instead, just write a simple package for reading from reader into a byte slice until the slice is either full or we get an error (successful return on either full slice or on io.EOF, copying chunk to new slice matching appropriate size). This sounds a lot like .Read, but it isn't: .Read(p) will read up to p bytes that are available at the time of operation even if io.EOF hasn't been reached yet. Normally this wouldn't be necessary, but I have to encrypt bytes in the same lengths so I can (1) use my chunkSize to limit overhead and (2) be sure that I'm pulling bytes out of an encrypted file in the "same" sized slices that I put them in at (i.e. I want to fetch chunk 3 instead of parts of chunk 1 and 2 when it's time to fetch chunk 3)
 			if buf.Len() > 0 {
-				encryptedChunk, err := EncryptBytes(key, nonce, buf.Next(EncryptionChunkSize))
+				chunk := make([]byte, EncryptionChunkSize)
+
+				chunkLen, err := buf.Read(chunk)
+				if err != nil && err != io.EOF {
+					return written, err
+				}
+
+				encryptedChunk, err := EncryptBytes(key, nonce, chunk[:chunkLen])
 				if err != nil {
 					fmt.Println("EncryptBytes:", err) // TODO: remove (testing)
 					return written, err
