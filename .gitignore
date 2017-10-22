@@ -25,3 +25,6 @@ _testmain.go
 
 # Testing (hidden)
 testing
+
+# Config (hidden)
+.vscode
