@@ -1,7 +1,6 @@
 package stream
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -108,140 +107,77 @@ func DecryptBytes(key [KeySize]byte, message []byte) ([]byte, error) {
 	return out, nil
 }
 
-// REVIEW: https://blog.cloudflare.com/recycling-memory-buffers-in-go/
-// manage memory carefully
-// TODO: https://stackoverflow.com/questions/16971741/how-do-you-clear-a-slice-in-go
-// I love you, internet
-
 // Encrypt encrypts a stream of data in chunks; CALLER MUST USE TooLargeToChunk
-// to determine if it's safe to finish running this
-// TODO: explore async options - probably use io.ReadSeeker
-// TODO: Security Issue: TooLargeToChunk can help when the size of stream is known, but when it is now, we need to monitor for repeating Nonce and throw error if one is encountered!!
 func Encrypt(ctx context.Context, key [KeySize]byte, r io.Reader, w io.Writer) (int64, error) {
 	var (
-		singleByte = make([]byte, 1)                                       // used to pull single byte from r
-		buf        = bytes.NewBuffer(make([]byte, 0, EncryptionChunkSize)) // collect bytes for encryption
-		written    int64
+		chunk   = make([]byte, EncryptionChunkSize)
+		written int64
 	)
 
 	for nonce := GenerateNonce(); ; nonce = IncrementNonce(nonce) {
 		select {
 		case <-ctx.Done():
-			return written, ctx.Err()
+			return 0, ctx.Err()
 
 		default:
-			// BUG: if slowly receiving bytes (from gzip, for example),
-			// then Read won't get the full chunk size even if there are
-			// more bytes on the way. Instead, it's necessary to buffer
-			// the bytes read until we either hit an err of io.EOF, or
-			// we fill a chunk.
-
-			// Read single byte, return err if non-EOF is received
-			_, readErr := r.Read(singleByte)
-			if readErr != nil && readErr != io.EOF {
-				return written, readErr
+			length, err := GetChunk(ctx, r, chunk)
+			if err != nil && err != io.EOF {
+				return 0, err
 			}
 
-			if readErr != io.EOF {
-				// Add byte to buffer
-				if err := buf.WriteByte(singleByte[0]); err != nil {
-					return written, err
+			if length > 0 {
+				encryptedChunk, encErr := EncryptBytes(key, nonce, chunk[:length])
+				if encErr != nil {
+					return 0, encErr
 				}
 
-				// See if we have enough data to encrypt
-				if buf.Len() < EncryptionChunkSize {
-					continue // get more data
+				bytesWritten, writeErr := w.Write(encryptedChunk)
+				if writeErr != nil {
+					return 0, writeErr
 				}
+				written += int64(bytesWritten)
 			}
 
-			// During EOF wrapup, ensure we don't try to encrypt 0 bytes
-			// BUG: buf.Len() will be > 0 if on second chunk or beyond because buf.Next does not remove bytes from buf!!
-			// TODO: get away from using bufio... instead, just write a simple package for reading from reader into a byte slice until the slice is either full or we get an error (successful return on either full slice or on io.EOF, copying chunk to new slice matching appropriate size). This sounds a lot like .Read, but it isn't: .Read(p) will read up to p bytes that are available at the time of operation even if io.EOF hasn't been reached yet. Normally this wouldn't be necessary, but I have to encrypt bytes in the same lengths so I can (1) use my chunkSize to limit overhead and (2) be sure that I'm pulling bytes out of an encrypted file in the "same" sized slices that I put them in at (i.e. I want to fetch chunk 3 instead of parts of chunk 1 and 2 when it's time to fetch chunk 3)
-			if buf.Len() > 0 {
-				chunk := make([]byte, EncryptionChunkSize)
-
-				chunkLen, err := buf.Read(chunk)
-				if err != nil && err != io.EOF {
-					return written, err
-				}
-
-				encryptedChunk, err := EncryptBytes(key, nonce, chunk[:chunkLen])
-				if err != nil {
-					fmt.Println("EncryptBytes:", err) // TODO: remove (testing)
-					return written, err
-				}
-
-				num, err := w.Write(encryptedChunk)
-				if err != nil {
-					fmt.Println("Write:", err) // TODO: remove (testing)
-					return written, err
-				}
-				written += int64(num)
-
-				// Since this was EOF and we had a chance to encrypt the final chunk, it's time to return
-				if readErr == io.EOF {
-					return written, nil
-				}
+			if err == io.EOF {
+				return written, nil // EOF marks success
 			}
 		}
 	}
 }
 
 // Decrypt decrypts a stream of data in chunks
-// TODO: explore async options - probably use io.ReadSeeker
-// TODO: update to generate initial nonce, then increment for subsequent chunks
 func Decrypt(ctx context.Context, key [KeySize]byte, r io.Reader, w io.Writer) (int64, error) {
 	var (
-		singleByte = make([]byte, 1)                                       // used to pull single byte from r
-		buf        = bytes.NewBuffer(make([]byte, 0, DecryptionChunkSize)) // collect bytes for decryption
-		written    int64                                                   // record how many bytes are written to w
+		chunk   = make([]byte, DecryptionChunkSize)
+		written int64
 	)
 
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Println("CONTEXT ERROR HIT") // TODO: remove (testing)
-			return written, ctx.Err()
+			return 0, ctx.Err()
 
 		default:
-
-			// Read single byte, return err if non-EOF is received
-			_, readErr := r.Read(singleByte)
-			if readErr != nil && readErr != io.EOF {
-				return written, readErr
+			length, err := GetChunk(ctx, r, chunk)
+			if err != nil && err != io.EOF {
+				return 0, err
 			}
 
-			if readErr != io.EOF {
-				// Add byte to buffer
-				if err := buf.WriteByte(singleByte[0]); err != nil {
-					return written, err
+			if length > 0 {
+				decryptedChunk, encErr := DecryptBytes(key, chunk[:length])
+				if encErr != nil {
+					return 0, encErr
 				}
 
-				// See if we have enough data to decrypt
-				if buf.Len() < DecryptionChunkSize {
-					continue // get more data
+				bytesWritten, writeErr := w.Write(decryptedChunk)
+				if writeErr != nil {
+					return 0, writeErr
 				}
+				written += int64(bytesWritten)
 			}
 
-			// During EOF wrapup, ensure we don't try to decrypt 0 bytes
-			if buf.Len() > 0 {
-				decryptedChunk, err := DecryptBytes(key, buf.Next(DecryptionChunkSize))
-				if err != nil {
-					fmt.Println("DecryptBytes:", err) // TODO: remove (testing)
-					return written, err
-				}
-
-				num, err := w.Write(decryptedChunk)
-				if err != nil {
-					fmt.Println("Write:", err) // TODO: remove (testing)
-					return written, err
-				}
-				written += int64(num)
-			}
-
-			// Since this was EOF and we had a chance to write decrypt final chunk, it's time to return
-			if readErr == io.EOF {
-				return written, nil
+			if err == io.EOF {
+				return written, nil // EOF marks success
 			}
 		}
 	}
@@ -255,4 +191,21 @@ func TooLargeToChunk(size int64) bool {
 		return true
 	}
 	return false
+}
+
+func readAndWriteChunk(ctx context.Context, chunk []byte, key [KeySize]byte, r io.Reader, w io.Writer) (written int64, err error) {
+	length, err := GetChunk(ctx, r, chunk)
+	if err != nil && err != io.EOF {
+		return 0, err
+	}
+
+	if length > 0 {
+		bytesWritten, writeErr := w.Write(chunk[:length])
+		if writeErr != nil {
+			return 0, writeErr
+		}
+		written += int64(bytesWritten)
+	}
+
+	return written, err // return err (may be io.EOF)
 }
