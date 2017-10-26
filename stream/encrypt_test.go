@@ -26,6 +26,15 @@ func runEncryption(t *testing.T, key [stream.KeySize]byte) {
 	defer src.Close()
 	defer dst.Close()
 
+	srcInfo, err := src.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if stream.IsTooLargeToChunk(srcInfo.Size()) {
+		t.Fatal(stream.ErrEncryptSize)
+	}
+
 	written, err := stream.Encrypt(context.Background(), key, src, dst)
 	if err != nil {
 		t.Fatal(err)

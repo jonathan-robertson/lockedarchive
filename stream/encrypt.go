@@ -107,19 +107,30 @@ func DecryptBytes(key [KeySize]byte, message []byte) ([]byte, error) {
 	return out, nil
 }
 
-// Encrypt encrypts a stream of data in chunks; CALLER MUST USE TooLargeToChunk
+// Encrypt encrypts a stream of data in chunks.
+// IF SIZE IS KNOWN, caller should first use TooLargeToChunk
 func Encrypt(ctx context.Context, key [KeySize]byte, r io.Reader, w io.Writer) (int64, error) {
 	var (
-		chunk   = make([]byte, EncryptionChunkSize)
-		written int64
+		chunk        = make([]byte, EncryptionChunkSize)
+		written      int64
+		nonce        = GenerateNonce()
+		initialNonce [NonceSize]byte
 	)
+	copy(initialNonce[:], nonce[:])
 
-	for nonce := GenerateNonce(); ; nonce = IncrementNonce(nonce) {
+	for {
 		select {
 		case <-ctx.Done():
 			return 0, ctx.Err()
 
 		default:
+			nonce = IncrementNonce(nonce)
+
+			// Protect against the nonce repeating
+			if initialNonce == nonce {
+				return 0, ErrEncryptSize
+			}
+
 			length, err := GetChunk(ctx, r, chunk)
 			if err != nil && err != io.EOF {
 				return 0, err
@@ -139,7 +150,7 @@ func Encrypt(ctx context.Context, key [KeySize]byte, r io.Reader, w io.Writer) (
 			}
 
 			if err == io.EOF {
-				return written, nil // EOF marks success
+				return written, nil
 			}
 		}
 	}
@@ -183,9 +194,9 @@ func Decrypt(ctx context.Context, key [KeySize]byte, r io.Reader, w io.Writer) (
 	}
 }
 
-// TooLargeToChunk determines if a file is too large to safely chunk,
+// IsTooLargeToChunk determines if a file is too large to safely chunk,
 // considering our ChunkSize and NonceSize
-func TooLargeToChunk(size int64) bool {
+func IsTooLargeToChunk(size int64) bool {
 	numOfChunks := (float64)(size / EncryptionChunkSize)
 	if numOfChunks > maxChunkCount {
 		return true
