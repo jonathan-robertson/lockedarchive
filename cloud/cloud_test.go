@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gtank/cryptopasta"
+	"github.com/jonathan-robertson/lockedarchive/stream"
 )
 
 func TestEntry(t *testing.T) {
@@ -17,7 +17,7 @@ func TestEntry(t *testing.T) {
 		LastModified: time.Now(),
 	}
 
-	key := cryptopasta.NewEncryptionKey()
+	key := stream.GenerateKey()
 	meta, err := entry.Meta(key)
 	if err != nil {
 		t.Fatal(err)

@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/gtank/cryptopasta"
+	"github.com/jonathan-robertson/lockedarchive/stream"
 )
 
 // Client represents an object storage provider's service
@@ -43,30 +43,27 @@ type Entry struct {
 }
 
 // Meta returns Entry's encrypted metadata
-func (entry Entry) Meta(key *[32]byte) (encryptedMeta string, err error) {
-	// TODO: get key
-	// var key *[32]byte
-	// cryptopasta.Encrypt([]byte())
+func (entry Entry) Meta(key *[stream.KeySize]byte) (encryptedMeta string, err error) {
 
 	plaintext, err := json.Marshal(entry)
 	if err != nil {
 		return
 	}
 
-	ciphertext, err := cryptopasta.Encrypt(plaintext, key)
+	ciphertext, err := stream.EncryptBytes(key, stream.GenerateNonce(), plaintext)
 
 	return base64.StdEncoding.EncodeToString(ciphertext), err
 }
 
 // UpdateMeta reads in encrypted metadata and translates it to Entry's fields
 // TODO: Update to no longer receive key - pull it from config
-func (entry *Entry) UpdateMeta(encryptedMeta string, key *[32]byte) error {
+func (entry *Entry) UpdateMeta(encryptedMeta string, key *[stream.KeySize]byte) error {
 	decoded, err := base64.StdEncoding.DecodeString(encryptedMeta)
 	if err != nil {
 		return err
 	}
 
-	plaintext, err := cryptopasta.Decrypt(decoded, key)
+	plaintext, err := stream.DecryptBytes(key, decoded)
 	if err != nil {
 		return err
 	}
