@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/jonathan-robertson/lockedarchive/secure"
 	"github.com/jonathan-robertson/lockedarchive/stream"
 )
 
@@ -15,13 +16,13 @@ const (
 )
 
 func TestEncryption(t *testing.T) {
-	key := stream.GenerateKey()
+	key := secure.GenerateKey()
 	t.Run("Encrypt", func(t *testing.T) { runEncryption(t, key) })
 	t.Run("Decrypt", func(t *testing.T) { runDecryption(t, key) })
 	compareAndCleanup(t, encSrcFilename, encWrkFilename, encDstFilename)
 }
 
-func runEncryption(t *testing.T, key *[stream.KeySize]byte) {
+func runEncryption(t *testing.T, key *[secure.KeySize]byte) {
 	src, dst := setup(t, encSrcFilename, encWrkFilename)
 	defer src.Close()
 	defer dst.Close()
@@ -58,7 +59,7 @@ func runEncryption(t *testing.T, key *[stream.KeySize]byte) {
 	t.Logf("successfully wrote %d bytes of encrypted data from %s to %s", written, encSrcFilename, encWrkFilename)
 }
 
-func runDecryption(t *testing.T, key *[stream.KeySize]byte) {
+func runDecryption(t *testing.T, key *[secure.KeySize]byte) {
 	src, dst := setup(t, encWrkFilename, encDstFilename)
 	defer src.Close()
 	defer dst.Close()

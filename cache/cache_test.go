@@ -6,9 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/jonathan-robertson/lockedarchive/stream"
-
 	"github.com/jonathan-robertson/lockedarchive/cache"
+	"github.com/jonathan-robertson/lockedarchive/secure"
 )
 
 const (
@@ -19,7 +18,7 @@ const (
 )
 
 func TestCache(t *testing.T) {
-	key := stream.GenerateKey()
+	key := secure.GenerateKey()
 	if err := cache.Encode(decodedFilename, key); err != nil {
 		t.Fatal(err)
 	}

@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/jonathan-robertson/lockedarchive/stream"
+	"github.com/jonathan-robertson/lockedarchive/secure"
 )
 
 // Client represents an object storage provider's service
@@ -43,27 +43,27 @@ type Entry struct {
 }
 
 // Meta returns Entry's encrypted metadata
-func (entry Entry) Meta(key *[stream.KeySize]byte) (encryptedMeta string, err error) {
+func (entry Entry) Meta(key *[secure.KeySize]byte) (encryptedMeta string, err error) {
 
 	plaintext, err := json.Marshal(entry)
 	if err != nil {
 		return
 	}
 
-	ciphertext, err := stream.EncryptBytes(key, stream.GenerateNonce(), plaintext)
+	ciphertext, err := secure.Encrypt(key, secure.GenerateNonce(), plaintext)
 
 	return base64.StdEncoding.EncodeToString(ciphertext), err
 }
 
 // UpdateMeta reads in encrypted metadata and translates it to Entry's fields
 // TODO: Update to no longer receive key - pull it from config
-func (entry *Entry) UpdateMeta(encryptedMeta string, key *[stream.KeySize]byte) error {
+func (entry *Entry) UpdateMeta(encryptedMeta string, key *[secure.KeySize]byte) error {
 	decoded, err := base64.StdEncoding.DecodeString(encryptedMeta)
 	if err != nil {
 		return err
 	}
 
-	plaintext, err := stream.DecryptBytes(key, decoded)
+	plaintext, err := secure.Decrypt(key, decoded)
 	if err != nil {
 		return err
 	}

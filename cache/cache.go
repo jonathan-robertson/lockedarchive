@@ -7,11 +7,12 @@ import (
 	"os"
 	"strings"
 
+	"github.com/jonathan-robertson/lockedarchive/secure"
 	"github.com/jonathan-robertson/lockedarchive/stream"
 )
 
 // Encode compresses and encrypts a file at provided path, writing it to the cache
-func Encode(sourceFilename string, key *[stream.KeySize]byte) error {
+func Encode(sourceFilename string, key *[secure.KeySize]byte) error {
 	src, err := os.Open(sourceFilename)
 	if err != nil {
 		return err
@@ -51,7 +52,7 @@ func Encode(sourceFilename string, key *[stream.KeySize]byte) error {
 }
 
 // Decode decrypts and decompresses a file at provided path
-func Decode(sourceFilename string, key *[stream.KeySize]byte) error {
+func Decode(sourceFilename string, key *[secure.KeySize]byte) error {
 	src, err := os.Open(sourceFilename)
 	if err != nil {
 		return err
@@ -67,25 +68,6 @@ func Decode(sourceFilename string, key *[stream.KeySize]byte) error {
 	pr, pw := io.Pipe()
 	defer pw.Close()
 	ctx, cancel := context.WithCancel(context.Background())
-
-	// var decompressionErr error
-	// go func() {
-	// 	_, decompressionErr = stream.Decompress(pr, dst)
-	// 	cancel()
-	// }()
-
-	// if err := stream.Decrypt(ctx, key, src, pw); err != nil {
-	// 	if err == context.Canceled {
-	// 		return decompressionErr
-	// 	}
-	// 	return err
-	// }
-	// if err := pw.Close(); err != nil {
-	// 	return err
-	// }
-
-	// <-ctx.Done()
-	// return dst.Sync()
 
 	// Decrypt data
 	var decryptionErr error
@@ -105,75 +87,6 @@ func Decode(sourceFilename string, key *[stream.KeySize]byte) error {
 
 	return dst.Sync()
 }
-
-// // TODO: init should reach out for the user's configuration to get key
-// var key *[32]byte // temporary key
-
-// // Write compresses and encrypts file, writing it to the cache; closes file
-// func Write(source, destination *os.File) (err error) {
-
-// 	// Read all contents of file
-// 	uncompressed, err := ioutil.ReadAll(source)
-// 	if err != nil {
-// 		return
-// 	}
-
-// 	// Compress
-// 	compressedtext, err := compress(uncompressed)
-// 	if err != nil {
-// 		return
-// 	}
-// 	if err = source.Close(); err != nil {
-// 		return
-// 	}
-
-// 	// Encrypt
-// 	ciphertext, err := cryptopasta.Encrypt(compressedtext, key)
-// 	if err != nil {
-// 		return
-// 	}
-
-// 	// Write
-// 	if _, err = destination.Write(ciphertext); err != nil {
-// 		return
-// 	}
-// 	return destination.Close()
-// }
-
-// // Read decrypts and decompresses file, returning plaintext
-// func Read(name string) (plaintext []byte, err error) {
-
-// 	// Get file if exists
-// 	file, err := os.Open(name)
-// 	if err != nil {
-// 		return
-// 	}
-
-// 	// Read file contents
-// 	ciphertext, err := ioutil.ReadAll(file)
-// 	if err != nil {
-// 		return
-// 	}
-
-// 	// Close file
-// 	if err = file.Close(); err != nil {
-// 		return
-// 	}
-
-// 	// Decrypt
-// 	compressed, err := cryptopasta.Decrypt(ciphertext, key)
-// 	if err != nil {
-// 		return
-// 	}
-
-// 	// Decompress
-// 	plaintext, err = decompress(compressed)
-// 	if err != nil {
-// 		return
-// 	}
-
-// 	return
-// }
 
 // // Put adds a file to the cache without any modifications
 // // This is best used with data received from cloud storage
