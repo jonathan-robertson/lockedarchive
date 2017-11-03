@@ -8,7 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 
-	"github.com/puddingfactory/lockedarchive/cache"
+	"github.com/jonathan-robertson/lockedarchive/cache"
 )
 
 // AS3 is used to access AWS S3 services in a way that satisfies the Client interface
