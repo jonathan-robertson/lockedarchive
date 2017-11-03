@@ -2,7 +2,18 @@
 
 This project is meant for storing/archiving family information in a safe way (locally encrypted): Documents, Tax forms, scans of important licenses, etc.
 
-If this project interests you, star/watch it and feel free get involved!
+## Development
+
+If this project interests you, star/watch it and feel free get involved.
+
+1. `go get -u github.com/jonathan-robertson/lockedarchive`
+1. Install Glide for dependency management
+   - macOS
+     1. If you don't already have it, install Homebrew according to [this guide](https://brew.sh)
+     1. If you don't already have it, install Glide for dependency management `brew install glide`
+     1. Navigate to $GOPATH/src/github.com/jonathan-robertson/lockedarchive
+     1. Update dependencies with `glide update --strip-vendor` or `glide u -v` (alias)
+        - `--strip-vendor` because I've included the dependencies/vendors of each project within my own
 
 ## Documentation Licensing
 
