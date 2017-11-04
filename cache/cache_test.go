@@ -18,8 +18,12 @@ const (
 )
 
 func TestCache(t *testing.T) {
-	key := secure.GenerateKey()
-	if err := cache.Encode(decodedFilename, key); err != nil {
+	kc, err := secure.GenerateKeyContainer()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cache.Encode(decodedFilename, kc.Key()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -28,7 +32,7 @@ func TestCache(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := cache.Decode(renamedEncodedFilename, key); err != nil {
+	if err := cache.Decode(renamedEncodedFilename, kc.Key()); err != nil {
 		t.Fatal(err)
 	}
 

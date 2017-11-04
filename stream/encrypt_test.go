@@ -16,13 +16,17 @@ const (
 )
 
 func TestEncryption(t *testing.T) {
-	key := secure.GenerateKey()
-	t.Run("Encrypt", func(t *testing.T) { runEncryption(t, key) })
-	t.Run("Decrypt", func(t *testing.T) { runDecryption(t, key) })
+	kc, err := secure.GenerateKeyContainer()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("Encrypt", func(t *testing.T) { runEncryption(t, kc.Key()) })
+	t.Run("Decrypt", func(t *testing.T) { runDecryption(t, kc.Key()) })
 	compareAndCleanup(t, encSrcFilename, encWrkFilename, encDstFilename)
 }
 
-func runEncryption(t *testing.T, key *[secure.KeySize]byte) {
+func runEncryption(t *testing.T, key secure.Key) {
 	src, dst := setup(t, encSrcFilename, encWrkFilename)
 	defer src.Close()
 	defer dst.Close()
@@ -59,7 +63,7 @@ func runEncryption(t *testing.T, key *[secure.KeySize]byte) {
 	t.Logf("successfully wrote %d bytes of encrypted data from %s to %s", written, encSrcFilename, encWrkFilename)
 }
 
-func runDecryption(t *testing.T, key *[secure.KeySize]byte) {
+func runDecryption(t *testing.T, key secure.Key) {
 	src, dst := setup(t, encWrkFilename, encDstFilename)
 	defer src.Close()
 	defer dst.Close()

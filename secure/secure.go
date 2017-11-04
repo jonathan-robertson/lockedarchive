@@ -5,9 +5,23 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"unsafe"
+
+	"github.com/awnumar/memguard"
 
 	"golang.org/x/crypto/nacl/secretbox"
 )
+
+// Container is responsible for securing encryption keys in memory
+type Container struct {
+	*memguard.LockedBuffer
+}
+
+// Nonce is used in encryption and should be random, but not secret
+type Nonce = *[NonceSize]byte
+
+// Key is used in encryption and should be kept secret
+type Key = *[KeySize]byte
 
 const (
 
@@ -27,31 +41,28 @@ var (
 	ErrDecrypt = errors.New("secret: decryption failed")
 )
 
+// Key returns an unsafe pointer to a byte array for use in encryption/decryption methods
+func (container *Container) Key() Key {
+	return (Key)(unsafe.Pointer(&container.Buffer()[0]))
+}
+
 // REVIEW: https://leanpub.com/gocrypto/read#leanpub-auto-nacl
 
-// GenerateKey creates a new random secret key and panics if the source
-// of randomness fails
-// TODO: harvest more entropy?
-func GenerateKey() *[KeySize]byte {
-	key := new([KeySize]byte)
-	if _, err := io.ReadFull(rand.Reader, key[:]); err != nil {
-		panic(err)
-	}
-	return key
+// GenerateKeyContainer creates a new random secret key inside a safe container
+func GenerateKeyContainer() (*Container, error) {
+	buf, err := memguard.NewImmutableRandom(KeySize)
+	return &Container{LockedBuffer: buf}, err
 }
 
-// GenerateNonce creates a new random nonce and panics if the source of
-// randomness fails
-func GenerateNonce() *[NonceSize]byte {
+// GenerateNonce creates a new random nonce
+func GenerateNonce() (Nonce, error) {
 	nonce := new([NonceSize]byte)
-	if _, err := io.ReadFull(rand.Reader, nonce[:]); err != nil {
-		panic(err)
-	}
-	return nonce
+	_, err := io.ReadFull(rand.Reader, nonce[:])
+	return nonce, err
 }
 
-// IncrementNonce treats the received nonce as a big-endian value and increments it
-func IncrementNonce(nonce *[NonceSize]byte) {
+// IncrementNonce treats the received Nonce as big-endian value and increments it
+func IncrementNonce(nonce Nonce) {
 	for i := NonceSize - 1; i > 0; i-- {
 		nonce[i]++
 		if nonce[i] != 0 {
@@ -67,7 +78,7 @@ func IncrementNonce(nonce *[NonceSize]byte) {
 // REVIEW: Keep in mind that random nonces are not always the right choice.
 // We’ll talk more about this in a chapter on key exchanges, where we’ll talk
 // about how we actually get and share the keys that we’re using.
-func Encrypt(key *[KeySize]byte, nonce *[NonceSize]byte, message []byte) ([]byte, error) {
+func Encrypt(key Key, nonce Nonce, message []byte) ([]byte, error) {
 	fmt.Printf("encrypting chunk of size %d\n", len(message)) // TODO: remove (testing)
 
 	out := make([]byte, len(nonce))
@@ -78,7 +89,7 @@ func Encrypt(key *[KeySize]byte, nonce *[NonceSize]byte, message []byte) ([]byte
 
 // Decrypt extracts the nonce from the ciphertext, and attempts to
 // decrypt with NaCl's secretbox.
-func Decrypt(key *[KeySize]byte, message []byte) ([]byte, error) {
+func Decrypt(key Key, message []byte) ([]byte, error) {
 	fmt.Printf("decrypting chunk of size %d\n", len(message)) // TODO: remove (testing)
 
 	if len(message) < (NonceSize + secretbox.Overhead) {

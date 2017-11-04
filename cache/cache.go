@@ -12,7 +12,7 @@ import (
 )
 
 // Encode compresses and encrypts a file at provided path, writing it to the cache
-func Encode(sourceFilename string, key *[secure.KeySize]byte) error {
+func Encode(sourceFilename string, key secure.Key) error {
 	src, err := os.Open(sourceFilename)
 	if err != nil {
 		return err
@@ -52,7 +52,7 @@ func Encode(sourceFilename string, key *[secure.KeySize]byte) error {
 }
 
 // Decode decrypts and decompresses a file at provided path
-func Decode(sourceFilename string, key *[secure.KeySize]byte) error {
+func Decode(sourceFilename string, key secure.Key) error {
 	src, err := os.Open(sourceFilename)
 	if err != nil {
 		return err

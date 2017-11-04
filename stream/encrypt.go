@@ -30,15 +30,18 @@ var (
 
 // Encrypt encrypts a stream of data in chunks.
 // IF SIZE IS KNOWN, caller should first use TooLargeToChunk
-func Encrypt(ctx context.Context, key *[secure.KeySize]byte, r io.Reader, w io.Writer) (int64, error) {
-	var (
-		chunk        = make([]byte, EncryptionChunkSize)
-		written      int64
-		nonce        = secure.GenerateNonce()
-		initialNonce = new([secure.NonceSize]byte)
-	)
+func Encrypt(ctx context.Context, key secure.Key, r io.Reader, w io.Writer) (int64, error) {
+	nonce, err := secure.GenerateNonce()
+	if err != nil {
+		return 0, err
+	}
+
+	// Record nonce starting point to protect against looping of nonce
+	initialNonce := new([secure.NonceSize]byte)
 	copy(initialNonce[:], nonce[:])
 
+	var written int64
+	chunk := make([]byte, EncryptionChunkSize)
 	for {
 		select {
 		case <-ctx.Done():
@@ -78,7 +81,7 @@ func Encrypt(ctx context.Context, key *[secure.KeySize]byte, r io.Reader, w io.W
 }
 
 // Decrypt decrypts a stream of data in chunks
-func Decrypt(ctx context.Context, key *[secure.KeySize]byte, r io.Reader, w io.Writer) (int64, error) {
+func Decrypt(ctx context.Context, key secure.Key, r io.Reader, w io.Writer) (int64, error) {
 	var (
 		chunk   = make([]byte, DecryptionChunkSize)
 		written int64
