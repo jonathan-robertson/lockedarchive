@@ -4,9 +4,14 @@ package cloud
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/jonathan-robertson/lockedarchive/secure"
+)
+
+var (
+	noEncryptionKey = errors.New("no encryption key to decrypt for entry")
 )
 
 // Client represents an object storage provider's service
@@ -30,9 +35,10 @@ type Client interface {
 
 // Entry represents a standard object compatible with cloud operations
 type Entry struct {
-	Key string `json:"-"` // Key representing this Entry
+	ID string `json:"-"` // ID representing this Entry
 
-	ParentKey    string    `json:"p"` // Key representing Entry containing this one
+	Key          string    `json:"k"` // Encrypted encryption key used to encrypt/decrypt this data
+	ParentID     string    `json:"p"` // ID representing Entry containing this one
 	Name         string    `json:"n"` // Name of this Entry
 	IsDir        bool      `json:"d"` // Whether or not this Entry contains others
 	Size         int64     `json:"s"` // Size of Entry's data
@@ -50,7 +56,15 @@ func (entry Entry) Meta(key secure.Key) (encryptedMeta string, err error) {
 		return
 	}
 
-	ciphertext, err := secure.Encrypt(key, secure.GenerateNonce(), plaintext)
+	nonce, err := secure.GenerateNonce()
+	if err != nil {
+		return
+	}
+
+	ciphertext, err := secure.Encrypt(key, nonce, plaintext)
+	if err != nil {
+		return
+	}
 
 	return base64.StdEncoding.EncodeToString(ciphertext), err
 }
@@ -70,3 +84,14 @@ func (entry *Entry) UpdateMeta(encryptedMeta string, key secure.Key) error {
 
 	return json.Unmarshal(plaintext, entry)
 }
+
+// TODO
+// func (entry Entry) decryptKey() (secure.Key, error) {
+// 	if len(entry.Key) == 0 {
+// 		return nil, noEncryptionKey
+// 	}
+
+// 	// TODO: Get key/password from user to decrypt this key?
+// 	// plainKey, err := secure.Decrypt(, entry.Key)
+
+// }
