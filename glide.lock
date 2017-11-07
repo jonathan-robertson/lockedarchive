@@ -1,8 +1,12 @@
-hash: 36d33d9237069320ad90c710dfa3c9f4db4eab9bc0119c26ad3fe55a23e0cdde
-updated: 2017-11-04T06:12:28.285599-05:00
+hash: d82babded7845eb72b3757a8e8f56b471062cadb7179f1672d9f95f56c70a717
+updated: 2017-11-07T06:31:30.481663-06:00
 imports:
+- name: github.com/awnumar/memguard
+  version: 6844db088c1e9ff46875cb87404a34e2c31622f6
+  subpackages:
+  - memcall
 - name: github.com/aws/aws-sdk-go
-  version: d46843b92a3a8e377d7fe24b4d70fca37f923d00
+  version: b9e9981b543687c6fbfd064eaa0f7b69f5fdefd7
   subpackages:
   - aws
   - aws/awserr
@@ -33,14 +37,16 @@ imports:
   version: f280b3ba517bf5fc98922624f21fb0e7a92adaec
 - name: github.com/jmespath/go-jmespath
   version: bd40a432e4c76585ef6b72d3fd96fb9b6dc7b68d
+- name: github.com/shibukawa/configdir
+  version: e180dbdc8da04c4fa04272e875ce64949f38bd3e
 - name: golang.org/x/crypto
-  version: bd6f299fb381e4c3393d1c4b1f0b94f5e77650c8
+  version: 687d4b818545e443c8ba223cbef20b1721afd4db
   subpackages:
   - nacl/secretbox
   - poly1305
   - salsa20/salsa
 - name: golang.org/x/sys
-  version: 4fe5d7925040acd225bf9c7cee65e82d07f06bff
+  version: d4266bc12aae0b4128952c889b769442fce5d2f1
   subpackages:
   - unix
   - windows
