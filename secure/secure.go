@@ -10,6 +10,7 @@ import (
 	"github.com/awnumar/memguard"
 
 	"golang.org/x/crypto/nacl/secretbox"
+	"golang.org/x/crypto/scrypt"
 )
 
 // Container is responsible for securing encryption keys in memory
@@ -23,6 +24,9 @@ type Nonce = *[NonceSize]byte
 // Key is used in encryption and should be kept secret
 type Key = *[KeySize]byte
 
+// Salt is used in derriving a key from a passphrase
+type Salt = *[SaltSize]byte
+
 const (
 
 	// KeySize represents the size of the key in bytes
@@ -30,6 +34,9 @@ const (
 
 	// NonceSize represents the size of the nonce in bytes
 	NonceSize = 24 // 192-bit
+
+	// SaltSize represents the size of the salt in bytes
+	SaltSize = 8 // 64-bit
 )
 
 var (
@@ -54,7 +61,27 @@ func GenerateKeyContainer() (*Container, error) {
 	return &Container{LockedBuffer: buf}, err
 }
 
-// GenerateNonce creates a new random nonce
+// DeriveKeyContainer generates a new KeyContainer from a passphrase and wipes passphrase's bytes once done, even on err
+func DeriveKeyContainer(passphrase []byte, salt Salt) (*Container, error) {
+	defer Wipe(passphrase)
+
+	dk, err := scrypt.Key(passphrase, salt[:], 1<<15, 8, 1, KeySize)
+	if err != nil {
+		return nil, err
+	}
+
+	buf, err := memguard.NewImmutableFromBytes(dk)
+	return &Container{LockedBuffer: buf}, err
+}
+
+// GenerateSalt creates a new random Salt
+func GenerateSalt() (Salt, error) {
+	salt := new([SaltSize]byte)
+	_, err := io.ReadFull(rand.Reader, salt[:])
+	return salt, err
+}
+
+// GenerateNonce creates a new random Nonce
 func GenerateNonce() (Nonce, error) {
 	nonce := new([NonceSize]byte)
 	_, err := io.ReadFull(rand.Reader, nonce[:])
@@ -104,4 +131,11 @@ func Decrypt(key Key, message []byte) ([]byte, error) {
 	}
 
 	return out, nil
+}
+
+// Wipe attempts to zero out bytes
+func Wipe(data []byte) {
+	for i := 0; i < len(data); i++ {
+		data[i] = 0
+	}
 }
