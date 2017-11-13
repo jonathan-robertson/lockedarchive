@@ -63,9 +63,8 @@ func GenerateKeyContainer() (*Container, error) {
 
 // DeriveKeyContainer generates a new KeyContainer from a passphrase and wipes passphrase's bytes once done, even on err
 func DeriveKeyContainer(passphrase []byte, salt Salt) (*Container, error) {
-	defer Wipe(passphrase)
-
 	dk, err := scrypt.Key(passphrase, salt[:], 1<<15, 8, 1, KeySize)
+	Wipe(passphrase) // zero bytes from passphrase asap
 	if err != nil {
 		return nil, err
 	}
@@ -111,6 +110,7 @@ func Encrypt(key Key, nonce Nonce, message []byte) ([]byte, error) {
 	out := make([]byte, len(nonce))
 	copy(out, nonce[:])
 	out = secretbox.Seal(out, message, nonce, key)
+	Wipe(message) // zero bytes of original message in memory asap
 	return out, nil
 }
 
