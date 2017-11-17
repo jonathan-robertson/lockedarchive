@@ -61,10 +61,7 @@ func (entry Entry) Meta(key secure.Key) (encryptedMeta string, err error) {
 		return
 	}
 
-	ciphertext, err := secure.Encrypt(key, nonce, plaintext)
-	if err != nil {
-		return
-	}
+	ciphertext := secure.EncryptAndWipe(key, nonce, plaintext)
 
 	return base64.StdEncoding.EncodeToString(ciphertext), err
 }

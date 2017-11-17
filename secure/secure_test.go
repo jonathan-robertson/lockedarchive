@@ -2,58 +2,71 @@ package secure_test
 
 import (
 	"bytes"
-	"io/ioutil"
-	"os"
 	"testing"
 
 	"github.com/jonathan-robertson/lockedarchive/secure"
 )
 
 const (
-	srcFilename = "src.txt"
+	plaintext = "Text that is plain"
 )
+
+func TestPassphrase(t *testing.T) {
+	passphrase := []byte("test passphrase!")
+
+	pc, err := secure.ProtectPassphrase(passphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pc.Destroy()
+
+	salt, err := secure.GenerateSalt()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	kc, err := pc.DeriveKeyContainer(salt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("key generated: %x", kc.Key())
+	kc.Destroy()
+}
 
 func TestSecure(t *testing.T) {
 	kc := makeKeyContainer(t)
 	defer kc.Destroy()
 
-	plaintext := read(t)
-	encrypted := encrypt(t, plaintext, kc.Key())
-	decrypted := decrypt(t, encrypted, kc.Key())
+	plaintext := "string to test"
 
-	if !bytes.Equal(plaintext, decrypted) {
-		t.Fatal("plaintext does not equal decrypted text")
-	}
+	// Make a copy of plaintext since we need to verify it matches decrypted bytes
+	plaintextCopy := make([]byte, len(plaintext))
+	copy(plaintextCopy, []byte(plaintext))
+
+	encrypted := encryptAndWipe(t, kc.Key(), plaintextCopy)
+	decrypted := decrypt(t, kc.Key(), encrypted)
+	assertBytesEqual(t, []byte(plaintext), decrypted)
+
 	t.Log("data encrypted and decrypted to get same result")
 }
 
-func read(t *testing.T) []byte {
-	file, err := os.Open(srcFilename)
-	if err != nil {
-		t.Fatal(err)
+func assertBytesEqual(t *testing.T, x, y []byte) {
+	if !bytes.Equal(x, y) {
+		t.Fatal("plaintext does not equal decrypted text")
 	}
-
-	data, err := ioutil.ReadAll(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
 }
 
-func encrypt(t *testing.T, plaintext []byte, key secure.Key) []byte {
-	ciphertext, err := secure.Encrypt(key, makeNonce(t), plaintext)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return ciphertext
+func encryptAndWipe(t *testing.T, key secure.Key, plaintext []byte) []byte {
+	return secure.EncryptAndWipe(key, makeNonce(t), plaintext)
 }
 
-func decrypt(t *testing.T, ciphertext []byte, key secure.Key) []byte {
-	plaintext, err := secure.Decrypt(key, ciphertext)
+func decrypt(t *testing.T, key secure.Key, ciphertext []byte) []byte {
+	decrypted, err := secure.Decrypt(key, ciphertext)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return plaintext
+	return decrypted
 }
 
 func makeNonce(t *testing.T) secure.Nonce {
@@ -64,10 +77,10 @@ func makeNonce(t *testing.T) secure.Nonce {
 	return nonce
 }
 
-func makeKeyContainer(t *testing.T) *secure.Container {
-	container, err := secure.GenerateKeyContainer()
+func makeKeyContainer(t *testing.T) *secure.KeyContainer {
+	kc, err := secure.GenerateKeyContainer()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return container
+	return kc
 }

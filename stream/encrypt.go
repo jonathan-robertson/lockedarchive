@@ -61,10 +61,7 @@ func Encrypt(ctx context.Context, key secure.Key, r io.Reader, w io.Writer) (int
 			}
 
 			if length > 0 {
-				encryptedChunk, encErr := secure.Encrypt(key, nonce, chunk[:length])
-				if encErr != nil {
-					return 0, encErr
-				}
+				encryptedChunk := secure.EncryptAndWipe(key, nonce, chunk[:length])
 
 				bytesWritten, writeErr := w.Write(encryptedChunk)
 				if writeErr != nil {
