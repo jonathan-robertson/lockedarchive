@@ -7,13 +7,15 @@ This project is meant for storing/archiving family information in a safe way (lo
 If this project interests you, star/watch it and feel free get involved.
 
 1. `go get -u github.com/jonathan-robertson/lockedarchive`
-1. Install Glide for dependency management
+1. Install Dep for dependency management
    - macOS
      1. If you don't already have it, install Homebrew according to [this guide](https://brew.sh)
-     1. If you don't already have it, install Glide for dependency management `brew install glide`
+     1. If you don't already have it, install Glide for dependency management `brew install dep`
+        - `brew upgrade dep` to update it in case your version is out of date
      1. Navigate to $GOPATH/src/github.com/jonathan-robertson/lockedarchive
-     1. Update dependencies with `glide update --strip-vendor` or `glide u -v` (alias)
-        - `--strip-vendor` because I've included the dependencies/vendors of each project within my own
+     1. Update dependencies with `dep ensure`
+1. If you add any new dependencies, be sure to include them in dep with `dep ensure -add`
+   - example: `dep ensure -add example.com/some/dependency`
 
 ## Documentation Licensing
 
