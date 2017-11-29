@@ -11,7 +11,7 @@ const (
 	plaintext = "Text that is plain"
 )
 
-func TestPassphrase(t *testing.T) {
+func TestDerriveKeyContainer(t *testing.T) {
 	passphrase := []byte("test passphrase!")
 
 	pc, err := secure.ProtectPassphrase(passphrase)
@@ -30,35 +30,57 @@ func TestPassphrase(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Logf("key generated: %x", kc.Key())
+	t.Logf("key based on passphrase was successfully generated")
 	kc.Destroy()
 }
 
-func TestSecure(t *testing.T) {
+func TestEncrypt(t *testing.T) {
 	kc := makeKeyContainer(t)
 	defer kc.Destroy()
 
-	plaintext := "string to test"
+	plaintext := []byte("string to test")
 
-	// Make a copy of plaintext since we need to verify it matches decrypted bytes
-	plaintextCopy := make([]byte, len(plaintext))
-	copy(plaintextCopy, []byte(plaintext))
-
-	encrypted := encryptAndWipe(t, kc.Key(), plaintextCopy)
+	encrypted := encrypt(t, kc.Key(), plaintext)
 	decrypted := decrypt(t, kc.Key(), encrypted)
-	assertBytesEqual(t, []byte(plaintext), decrypted)
+	assertBytesEqual(t, plaintext, decrypted)
 
 	t.Log("data encrypted and decrypted to get same result")
 }
 
+func TestEncryptKeyToString(t *testing.T) {
+	passphrase := []byte("test passphrase!")
+	pc, err := secure.ProtectPassphrase(passphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	kc, err := secure.GenerateKeyContainer()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keyString, err := secure.EncryptKeyToString(pc, kc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dkc, err := secure.DecryptKeyFromString(pc, keyString)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertBytesEqual(t, kc.Key()[:], dkc.Key()[:])
+	t.Log("key successfully encrypted and decrypted")
+}
+
 func assertBytesEqual(t *testing.T, x, y []byte) {
 	if !bytes.Equal(x, y) {
-		t.Fatal("plaintext does not equal decrypted text")
+		t.Fatalf("byte slices do not equal\nx: %s\ny: %s", x, y)
 	}
 }
 
-func encryptAndWipe(t *testing.T, key secure.Key, plaintext []byte) []byte {
-	return secure.EncryptAndWipe(key, makeNonce(t), plaintext)
+func encrypt(t *testing.T, key secure.Key, plaintext []byte) []byte {
+	return secure.Encrypt(key, makeNonce(t), plaintext)
 }
 
 func decrypt(t *testing.T, key secure.Key, ciphertext []byte) []byte {

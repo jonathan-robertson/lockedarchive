@@ -3,6 +3,7 @@ package secure
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"io"
 	"unsafe"
@@ -13,7 +14,7 @@ import (
 	"golang.org/x/crypto/scrypt"
 )
 
-// Container is responsible for securing encryption keys and passphrases in memory
+// container is responsible for securing encryption keys and passphrases in memory
 type container struct {
 	*memguard.LockedBuffer
 }
@@ -57,17 +58,17 @@ var (
 	ErrPassphraseContainerNotSet = errors.New("passphrase not set")
 )
 
-// Key returns an unsafe pointer to a byte array for use in encryption/decryption methods
-func (kc *KeyContainer) Key() Key {
-	return (Key)(unsafe.Pointer(&kc.Buffer()[0]))
-}
-
 // REVIEW: https://leanpub.com/gocrypto/read#leanpub-auto-nacl
 
 // GenerateKeyContainer creates a new random secret key inside a safe container
 func GenerateKeyContainer() (*KeyContainer, error) {
 	buf, err := memguard.NewImmutableRandom(KeySize)
 	return &KeyContainer{LockedBuffer: buf}, err
+}
+
+// Key returns an unsafe pointer to a byte array for use in encryption/decryption methods
+func (kc *KeyContainer) Key() Key {
+	return (Key)(unsafe.Pointer(&kc.Buffer()[0]))
 }
 
 // ProtectPassphrase copies passphrase bytes to a safe place in memory and wipes the original
@@ -128,30 +129,30 @@ func IncrementNonce(nonce Nonce) {
 	}
 }
 
-// EncryptAndWipe encrypts the input using NaCl's secretbox package and the nonce is prepended to the ciphertext.
+// Encrypt encrypts the input using NaCl's secretbox package and the nonce is prepended to the ciphertext.
 // A sealed message will the same size as the original message plus secretbox.Overhead bytes long.
-// The slice is wiped once the bytes have been encrypted.
-func EncryptAndWipe(key Key, nonce Nonce, message []byte) []byte {
-	// fmt.Printf("encrypting chunk of size %d\n", len(message)) // TODO: remove (testing)
-
-	out := make([]byte, len(nonce))
+func Encrypt(key Key, nonce Nonce, message []byte) []byte {
+	out := make([]byte, NonceSize)
 	copy(out, nonce[:])
-	out = secretbox.Seal(out, message, nonce, key)
-	Wipe(message) // zero bytes of original message in memory asap
-	return out
+	return secretbox.Seal(out, message, nonce, key)
 }
 
-// Decrypt extracts the nonce from the ciphertext, and attempts to
-// decrypt with secretbox.
-func Decrypt(key Key, message []byte) ([]byte, error) {
-	// fmt.Printf("decrypting chunk of size %d\n", len(message)) // TODO: remove (testing)
+// EncryptAndWipe performs the same steps as Encrypt, but also wipes the message.
+// The slice is wiped once the bytes have been encrypted.
+func EncryptAndWipe(key Key, nonce Nonce, message []byte) []byte {
+	defer Wipe(message) // zero bytes of original message in memory asap
+	return Encrypt(key, nonce, message)
+}
 
+// Decrypt extracts the nonce from the ciphertext, and attempts to decrypt with secretbox.
+func Decrypt(key Key, message []byte) ([]byte, error) {
 	if len(message) < (NonceSize + secretbox.Overhead) {
 		return nil, ErrDecrypt
 	}
 
 	nonce := new([NonceSize]byte)
 	copy(nonce[:], message[:NonceSize])
+
 	out, ok := secretbox.Open(nil, message[NonceSize:], nonce, key)
 	if !ok {
 		return nil, ErrDecrypt
@@ -160,9 +161,52 @@ func Decrypt(key Key, message []byte) ([]byte, error) {
 	return out, nil
 }
 
-// EncryptWithSaltAndWipe encrypts the bytes with a key, nonce, and salt.
-// The slice is wiped once the bytes have been encrypted.
-func EncryptWithSaltAndWipe(pc *PassphraseContainer, nonce Nonce, message []byte) ([]byte, error) {
+// EncryptKeyToString encrypts key with a passphrase and base64 encodes the output
+func EncryptKeyToString(pc *PassphraseContainer, kc *KeyContainer) (string, error) {
+	salt, err := GenerateSalt()
+	if err != nil {
+		return "", err
+	}
+
+	pkc, err := pc.DeriveKeyContainer(salt)
+	if err != nil {
+		return "", err
+	}
+
+	nonce, err := GenerateNonce()
+	if err != nil {
+		return "", err
+	}
+
+	data := Encrypt(pkc.Key(), nonce, kc.Key()[:])
+	return base64.StdEncoding.EncodeToString(append(salt[:], data...)), nil
+}
+
+// DecryptKeyFromString decrypts a base64-encoded encryption key and returns a KeyContainer
+func DecryptKeyFromString(pc *PassphraseContainer, encryptedKey string) (*KeyContainer, error) {
+	decodedMessage, err := base64.StdEncoding.DecodeString(encryptedKey)
+	if err != nil {
+		return nil, err
+	}
+
+	salt := new([SaltSize]byte)
+	copy(salt[:], decodedMessage[:SaltSize])
+	kc, err := pc.DeriveKeyContainer(salt)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := Decrypt(kc.Key(), decodedMessage[SaltSize:])
+	if err != nil {
+		return nil, err
+	}
+
+	buf, err := memguard.NewImmutableFromBytes(data)
+	return &KeyContainer{LockedBuffer: buf}, err
+}
+
+// EncryptWithSalt encrypts the bytes with a key, nonce, and salt.
+func EncryptWithSalt(pc *PassphraseContainer, nonce Nonce, message []byte) ([]byte, error) {
 	if pc == nil {
 		return nil, ErrPassphraseContainerNotSet
 	}
@@ -177,10 +221,17 @@ func EncryptWithSaltAndWipe(pc *PassphraseContainer, nonce Nonce, message []byte
 		return nil, err
 	}
 
-	encryptedData := EncryptAndWipe(kc.Key(), nonce, message)
+	encryptedData := Encrypt(kc.Key(), nonce, message)
 
 	contents := append(salt[:], encryptedData...)
 	return contents, nil
+}
+
+// EncryptWithSaltAndWipe performs the same steps as EncryptWithSalt but the message is wiped.
+// The message slice is wiped once the bytes have been encrypted.
+func EncryptWithSaltAndWipe(pc *PassphraseContainer, nonce Nonce, message []byte) ([]byte, error) {
+	defer Wipe(message)
+	return EncryptWithSalt(pc, nonce, message)
 }
 
 // DecryptWithSalt extracts the salt and nonce from the ciphertext and attempts to decrypt with secretbox.
