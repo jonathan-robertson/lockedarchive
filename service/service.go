@@ -23,23 +23,22 @@ var (
 	config     *Configuration
 	passphrase *secure.PassphraseContainer
 
-	errArchiveAlreadyExits  = errors.New("Archive already exists")
-	errArchiveDoesNotExit   = errors.New("Archive does not exist")
-	errInvalidLocation      = errors.New("Invalid online storage location")
-	errLocationAlreadyInUse = errors.New("Online storage location already in use")
+	errArchiveAlreadyExits  = errors.New("archive already exists")
+	errArchiveDoesNotExit   = errors.New("archive does not exist")
+	errInvalidLocation      = errors.New("invalid online storage location")
+	errLocationAlreadyInUse = errors.New("online storage location already in use")
 	errPassphraseNotSet     = errors.New("passphrase not set")
 )
 
-// AS3Location represents a remote storage location in Amazon S3
-type AS3Location struct {
-	Bucket    string `json:"bucket,omitempty"`
-	AccessKey string `json:"access_key,omitempty"`
-	SecretKey string `json:"secret_key,omitempty"`
-}
-
 // Archive represents sets of locations meant to store the same dataset
 type Archive struct {
-	AmazonS3 map[string]AS3Location `json:"amazon_s3,omitempty"`
+	MasterKey string                 `json:"masterKey"`
+	AmazonS3  map[string]AS3Location `json:"amazon_s3,omitempty"`
+}
+
+// getMasterKey decrypts the archive's master key for use in encrypted operations
+func (a Archive) getMasterKey() (*secure.KeyContainer, error) {
+	return secure.DecryptWithSaltFromStringToKey(passphrase, a.MasterKey)
 }
 
 // Configuration represents the structure of our config file
@@ -58,21 +57,28 @@ func ActivateService(pass []byte, filename string) (err error) {
 	return loadConfig(filename)
 }
 
-// CreateArchive adds an archive to the config file and saves config
-func CreateArchive(archiveName string, locationData ...[]byte) error {
+// CreateArchive adds an empty archive to the config file and saves config
+func CreateArchive(archiveName string) (*secure.KeyContainer, error) {
 	if _, exists := config.Archives[archiveName]; exists {
-		return errArchiveAlreadyExits
+		return nil, errArchiveAlreadyExits
+	}
+
+	kc, err := secure.GenerateKeyContainer()
+	if err != nil {
+		return nil, err
+	}
+
+	keyString, err := secure.EncryptWithSaltToString(passphrase, kc.Buffer()[:])
+	if err != nil {
+		return nil, err
 	}
 
 	config.Archives[archiveName] = Archive{
-		AmazonS3: make(map[string]AS3Location),
+		MasterKey: keyString,
+		AmazonS3:  make(map[string]AS3Location),
 	}
 
-	if err := saveConfig(); err != nil {
-		return err
-	}
-
-	return AddLocations(archiveName, locationData...)
+	return kc, saveConfig()
 }
 
 // AddLocations adds a remote location to an existing archive
@@ -91,13 +97,9 @@ func AddLocations(archiveName string, data ...[]byte) error {
 
 		archive.AmazonS3[s3.Bucket] = s3
 		config.Archives[archiveName] = archive
-
-		if err := saveConfig(); err != nil {
-			return err
-		}
 	}
 
-	return nil
+	return saveConfig()
 }
 
 // RemoveConfiguration removes the config file from the file system
@@ -147,6 +149,8 @@ func saveConfig() error {
 	configDirs := configdir.New(vendorName, appName)
 	folders := configDirs.QueryFolders(configdir.Global)
 
+	// TODO: There may be a safer way to do this...
+	// For example: json.Encoder(writer).Encode(memguard.LockedBuffer) or something
 	data, err := json.Marshal(config)
 	if err != nil {
 		return err
@@ -157,7 +161,6 @@ func saveConfig() error {
 		return err
 	}
 
-	// TODO: wipe salt, encyptedData, and combo once done?
 	contents, err := secure.EncryptWithSaltAndWipe(passphrase, nonce, data)
 	if err != nil {
 		return err

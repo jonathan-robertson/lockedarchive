@@ -14,7 +14,7 @@ import (
 	"golang.org/x/crypto/scrypt"
 )
 
-// container is responsible for securing encryption keys and passphrases in memory
+// container is responsible for securing special kinds of data in memory
 type container struct {
 	*memguard.LockedBuffer
 }
@@ -24,6 +24,9 @@ type KeyContainer container
 
 // PassphraseContainer is responsible for securing passphrases in memory
 type PassphraseContainer container
+
+// SecretContainer is responsible for securing text-based secrets
+type SecretContainer container
 
 // Nonce is used in encryption and should be random, but not secret
 type Nonce = *[NonceSize]byte
@@ -161,50 +164,6 @@ func Decrypt(key Key, message []byte) ([]byte, error) {
 	return out, nil
 }
 
-// EncryptKeyToString encrypts key with a passphrase and base64 encodes the output
-func EncryptKeyToString(pc *PassphraseContainer, kc *KeyContainer) (string, error) {
-	salt, err := GenerateSalt()
-	if err != nil {
-		return "", err
-	}
-
-	pkc, err := pc.DeriveKeyContainer(salt)
-	if err != nil {
-		return "", err
-	}
-
-	nonce, err := GenerateNonce()
-	if err != nil {
-		return "", err
-	}
-
-	data := Encrypt(pkc.Key(), nonce, kc.Key()[:])
-	return base64.StdEncoding.EncodeToString(append(salt[:], data...)), nil
-}
-
-// DecryptKeyFromString decrypts a base64-encoded encryption key and returns a KeyContainer
-func DecryptKeyFromString(pc *PassphraseContainer, encryptedKey string) (*KeyContainer, error) {
-	decodedMessage, err := base64.StdEncoding.DecodeString(encryptedKey)
-	if err != nil {
-		return nil, err
-	}
-
-	salt := new([SaltSize]byte)
-	copy(salt[:], decodedMessage[:SaltSize])
-	kc, err := pc.DeriveKeyContainer(salt)
-	if err != nil {
-		return nil, err
-	}
-
-	data, err := Decrypt(kc.Key(), decodedMessage[SaltSize:])
-	if err != nil {
-		return nil, err
-	}
-
-	buf, err := memguard.NewImmutableFromBytes(data)
-	return &KeyContainer{LockedBuffer: buf}, err
-}
-
 // EncryptWithSalt encrypts the bytes with a key, nonce, and salt.
 func EncryptWithSalt(pc *PassphraseContainer, nonce Nonce, message []byte) ([]byte, error) {
 	if pc == nil {
@@ -225,6 +184,21 @@ func EncryptWithSalt(pc *PassphraseContainer, nonce Nonce, message []byte) ([]by
 
 	contents := append(salt[:], encryptedData...)
 	return contents, nil
+}
+
+// EncryptWithSaltToString encrypts a message and returns it as a base64-encoded string
+func EncryptWithSaltToString(pc *PassphraseContainer, message []byte) (string, error) {
+	nonce, err := GenerateNonce()
+	if err != nil {
+		return "", err
+	}
+
+	ciphertext, err := EncryptWithSalt(pc, nonce, message)
+	if err != nil {
+		return "", err
+	}
+
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
 // EncryptWithSaltAndWipe performs the same steps as EncryptWithSalt but the message is wiped.
@@ -250,9 +224,43 @@ func DecryptWithSalt(pc *PassphraseContainer, message []byte) ([]byte, error) {
 	return Decrypt(kc.Key(), message[SaltSize:])
 }
 
+// DecryptWithSaltFromStringToKey decrypts a base64-encoded key and returns it as a KeyContainer
+func DecryptWithSaltFromStringToKey(pc *PassphraseContainer, encodedKey string) (*KeyContainer, error) {
+	plaintextKey, err := decryptWithSaltFromBase64(pc, encodedKey)
+	if err != nil {
+		return nil, err
+	}
+
+	// NOTE: plaintext is wiped in this process
+	buf, err := memguard.NewImmutableFromBytes(plaintextKey)
+	return &KeyContainer{LockedBuffer: buf}, err
+}
+
+// DecryptWithSaltFromStringToSecret decrypts a base64-encoded string and returns it as a SecretContainer
+func DecryptWithSaltFromStringToSecret(pc *PassphraseContainer, encoded string) (*SecretContainer, error) {
+	plaintext, err := decryptWithSaltFromBase64(pc, encoded)
+	if err != nil {
+		return nil, err
+	}
+
+	// NOTE: plaintext is wiped in this process
+	buf, err := memguard.NewImmutableFromBytes(plaintext)
+	return &SecretContainer{LockedBuffer: buf}, err
+}
+
 // Wipe attempts to zero out bytes
 func Wipe(data []byte) {
 	for i := 0; i < len(data); i++ {
 		data[i] = 0
 	}
+}
+
+// NOTE: expecting caller to wrap/wipe plaintext in mem-safe container
+func decryptWithSaltFromBase64(pc *PassphraseContainer, encoded string) ([]byte, error) {
+	ciphertext, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, err
+	}
+
+	return DecryptWithSalt(pc, ciphertext)
 }

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/awnumar/memguard"
+
 	"github.com/jonathan-robertson/lockedarchive/secure"
 )
 
@@ -59,17 +61,22 @@ func TestEncryptKeyToString(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	keyString, err := secure.EncryptKeyToString(pc, kc)
+	keyString, err := secure.EncryptWithSaltToString(pc, kc.Key()[:])
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	dkc, err := secure.DecryptKeyFromString(pc, keyString)
+	dkc, err := secure.DecryptWithSaltFromStringToKey(pc, keyString)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	assertBytesEqual(t, kc.Key()[:], dkc.Key()[:])
+	if match, err := memguard.Equal(kc.LockedBuffer, dkc.LockedBuffer); err != nil {
+		t.Fatal(err)
+	} else if !match {
+		t.Fatal("key before encryption does not match key after decryption")
+	}
+
 	t.Log("key successfully encrypted and decrypted")
 }
 

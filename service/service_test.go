@@ -35,22 +35,29 @@ func TestConfig(t *testing.T) {
 	// using a new byte slice each time is necessary because the slice is
 	// wiped when converted to a passphrase container / key
 	expectActivationSuccess(t, makeGoodPassphrase())
-	t.Log("Test Config file Loaded")
+	t.Log("test Config file Loaded")
 
 	location := service.AS3Location{
 		Bucket:    "testBucket",
 		AccessKey: "testAccessKey",
 		SecretKey: "testSecretKey",
 	}
-	data, err := json.Marshal(location)
+	locationByteSlice, err := json.Marshal(location)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := service.CreateArchive("test", data); err != nil {
+	kc, err := service.CreateArchive("test")
+	if err != nil {
 		t.Fatal(err)
 	}
-	t.Log("Archive added and config successfully saved")
+	defer kc.Destroy()
+	t.Log("archive added and config saved")
+
+	if err := service.AddLocations("test", locationByteSlice); err != nil {
+		t.Fatal(err)
+	}
+	t.Log("location added and config saved")
 
 	expectActivationFailure(t, makeBadPassphrase())
 	expectActivationSuccess(t, makeGoodPassphrase())
@@ -58,7 +65,7 @@ func TestConfig(t *testing.T) {
 	if err := service.RemoveConfiguration(); err != nil {
 		t.Fatal(err)
 	}
-	t.Log("Test Config file successfully deleted")
+	t.Log("test Config file successfully deleted")
 }
 
 func makeGoodPassphrase() []byte {
