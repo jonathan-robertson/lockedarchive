@@ -1,9 +1,7 @@
 package cache_test
 
 import (
-	"bytes"
-	"io/ioutil"
-	"os"
+	"context"
 	"testing"
 
 	"github.com/jonathan-robertson/lockedarchive/cache"
@@ -11,61 +9,82 @@ import (
 )
 
 const (
-	decodedFilename        = "src.txt"
-	encodedFilename        = "src.txt.la"
-	renamedEncodedFilename = "dst.txt.la"
-	renamedDecodedFilename = "dst.txt"
+	srcFilePath = "./src.txt"
+	passphrase  = "test"
+	parentID    = "parent"
 )
 
-func TestCache(t *testing.T) {
-	kc, err := secure.GenerateKeyContainer()
-	if err != nil {
+var (
+	pc *secure.PassphraseContainer
+)
+
+func setup(t *testing.T) {
+	var err error
+	if pc, err = secure.ProtectPassphrase([]byte(passphrase)); err != nil {
 		t.Fatal(err)
 	}
-
-	if err := cache.Encode(decodedFilename, kc.Key()); err != nil {
-		t.Fatal(err)
-	}
-
-	// Rename file so it decodes to a different name
-	if err := os.Rename(encodedFilename, renamedEncodedFilename); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := cache.Decode(renamedEncodedFilename, kc.Key()); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Logf("successfully added %s to the cache as %s", decodedFilename, renamedDecodedFilename)
-
-	compareAndCleanup(t, decodedFilename, renamedEncodedFilename, renamedDecodedFilename)
 }
 
-func compareAndCleanup(t *testing.T, srcFilename, wrkFilename, dstFilename string) {
-	srcData, err := ioutil.ReadFile(srcFilename)
-	if err != nil {
+func TestWrite(t *testing.T) {
+	setup(t)
+	if err := cache.Write(context.Background(), pc, parentID, srcFilePath); err != nil {
 		t.Fatal(err)
-	}
-
-	dstData, err := ioutil.ReadFile(dstFilename)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !bytes.Equal(srcData, dstData) {
-		t.Fatalf("%s and %s do not match", srcFilename, dstFilename)
-	}
-
-	t.Log("source and destination match, as expected")
-
-	if err := os.Remove(wrkFilename); err != nil {
-		t.Errorf("trouble removing %s", wrkFilename)
-	}
-
-	if err := os.Remove(dstFilename); err != nil {
-		t.Errorf("trouble removing %s", dstFilename)
 	}
 }
+
+/// OLD BELOW ///
+
+// func TestCache(t *testing.T) {
+// 	kc, err := secure.GenerateKeyContainer()
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+
+// 	if err := cache.Encode(decodedFilename, kc.Key()); err != nil {
+// 		t.Fatal(err)
+// 	}
+
+// 	// Rename file so it decodes to a different name
+// 	if err := os.Rename(encodedFilename, renamedEncodedFilename); err != nil {
+// 		t.Fatal(err)
+// 	}
+
+// 	if err := cache.Decode(renamedEncodedFilename, kc.Key()); err != nil {
+// 		t.Fatal(err)
+// 	}
+
+// 	t.Logf("successfully added %s to the cache as %s", decodedFilename, renamedDecodedFilename)
+
+// 	compareAndCleanup(t, decodedFilename, renamedEncodedFilename, renamedDecodedFilename)
+// }
+
+// func compareAndCleanup(t *testing.T, srcFilename, wrkFilename, dstFilename string) {
+// 	srcData, err := ioutil.ReadFile(srcFilename)
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+
+// 	dstData, err := ioutil.ReadFile(dstFilename)
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+
+// 	if !bytes.Equal(srcData, dstData) {
+// 		t.Fatalf("%s and %s do not match", srcFilename, dstFilename)
+// 	}
+
+// 	t.Log("source and destination match, as expected")
+
+// 	if err := os.Remove(wrkFilename); err != nil {
+// 		t.Errorf("trouble removing %s", wrkFilename)
+// 	}
+
+// 	if err := os.Remove(dstFilename); err != nil {
+// 		t.Errorf("trouble removing %s", dstFilename)
+// 	}
+// }
+
+/// REALLY OLD BELOW ///
 
 // func setup(t *testing.T) {
 // 	key = GenerateKey()

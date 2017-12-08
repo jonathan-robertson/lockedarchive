@@ -2,13 +2,13 @@ package cloud
 
 import (
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-
-	"github.com/jonathan-robertson/lockedarchive/cache"
 )
 
 // AS3 is used to access AWS S3 services in a way that satisfies the Client interface
@@ -66,34 +66,27 @@ func (client AS3) List(entries chan Entry) error {
 }
 
 // Upload sends an Entry to S3, along with its body and properties
-func (client AS3) Upload(entry Entry) error {
+func (client AS3) Upload(entry Entry, file *os.File) error {
 	input := &s3.PutObjectInput{
 		Bucket: aws.String(client.Bucket),
 		Key:    aws.String(entry.Key),
-		// Body:   aws.ReadSeekCloser(file),
+		Body:   aws.ReadSeekCloser(file),
 		// Tagging: aws.String("key1=value1&key2=value2"), // TODO: add this in later
 	}
-	if !entry.IsDir {
-		file, err := cache.Get(entry.Key)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-		input.Body = aws.ReadSeekCloser(file)
+	result, err := client.svc().PutObject(input)
+	if err != nil {
+		return evalErr(err)
 	}
-
-	_, err := client.svc().PutObject(input)
-	err = evalErr(err)
 
 	// REVIEW: result returns ETag
 	// NOTE: this may indicate that the system did not perform a hash on the contents (!)
-	// fmt.Printf("%+v\n", result)
+	fmt.Printf("%+v\n", result)
 
-	return err
+	return evalErr(err)
 }
 
 // Download fetches entry's data from S3 and Puts it in cache
-func (client AS3) Download(entry Entry) (err error) {
+func (client AS3) Download(entry Entry) (io.ReadCloser, error) {
 	input := &s3.GetObjectInput{
 		Bucket: aws.String(client.Bucket),
 		Key:    aws.String(entry.Key),
@@ -101,18 +94,18 @@ func (client AS3) Download(entry Entry) (err error) {
 
 	result, err := client.svc().GetObject(input)
 	if err != nil {
-		return evalErr(err)
+		return nil, evalErr(err)
 	}
 
 	fmt.Println(result.String()) // TODO: remove
 
-	if aws.Int64Value(result.ContentLength) > 0 {
-		err = cache.Put(entry.Key, result.Body)
+	if aws.Int64Value(result.ContentLength) == 0 {
+		// TODO: return error? does this even matter? Dirs will be size 0...
 	}
 
-	// TODO: Confirm checksum matches ETAG
+	return result.Body, nil
 
-	return
+	// TODO: Confirm checksum matches ETAG
 }
 
 // Head
@@ -164,6 +157,9 @@ func (client AS3) svc() *s3.S3 {
 
 // evalErr surfaces more info from an error and returns it
 func evalErr(err error) error {
+	if err == nil {
+		return nil
+	}
 
 	// TODO: type switch instead of this??
 

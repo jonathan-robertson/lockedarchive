@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	noEncryptionKey = errors.New("no encryption key to decrypt for entry")
+	errNoEncryptionKey = errors.New("no encryption key to decrypt for entry")
 )
 
 // Client represents an object storage provider's service

@@ -1,6 +1,10 @@
-package cloud
+package cloud_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/jonathan-robertson/lockedarchive/cloud"
+)
 
 func TestAS3(t *testing.T) {
 	var (
@@ -46,8 +50,8 @@ func TestAS3(t *testing.T) {
 	teardown(t, client)
 }
 
-func setupAS3(t *testing.T) (client Client) {
-	client = AS3Client("lockedarchive-test", "us-east-1")
+func setupAS3(t *testing.T) (client cloud.Client) {
+	client = cloud.AS3Client("lockedarchive-test", "us-east-1")
 	if err := client.CreateArchive(); err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +59,7 @@ func setupAS3(t *testing.T) (client Client) {
 	return
 }
 
-func teardown(t *testing.T, client Client) {
+func teardown(t *testing.T, client cloud.Client) {
 	if err := client.RemoveArchive(); err != nil {
 		t.Fatal(err)
 	}
