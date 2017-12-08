@@ -134,21 +134,21 @@ func IncrementNonce(nonce Nonce) {
 
 // Encrypt encrypts the input using NaCl's secretbox package and the nonce is prepended to the ciphertext.
 // A sealed message will the same size as the original message plus secretbox.Overhead bytes long.
-func Encrypt(key Key, nonce Nonce, message []byte) []byte {
+func Encrypt(kc *KeyContainer, nonce Nonce, message []byte) []byte {
 	out := make([]byte, NonceSize)
 	copy(out, nonce[:])
-	return secretbox.Seal(out, message, nonce, key)
+	return secretbox.Seal(out, message, nonce, kc.Key())
 }
 
 // EncryptAndWipe performs the same steps as Encrypt, but also wipes the message.
 // The slice is wiped once the bytes have been encrypted.
-func EncryptAndWipe(key Key, nonce Nonce, message []byte) []byte {
+func EncryptAndWipe(kc *KeyContainer, nonce Nonce, message []byte) []byte {
 	defer Wipe(message) // zero bytes of original message in memory asap
-	return Encrypt(key, nonce, message)
+	return Encrypt(kc, nonce, message)
 }
 
 // Decrypt extracts the nonce from the ciphertext, and attempts to decrypt with secretbox.
-func Decrypt(key Key, message []byte) ([]byte, error) {
+func Decrypt(kc *KeyContainer, message []byte) ([]byte, error) {
 	if len(message) < (NonceSize + secretbox.Overhead) {
 		return nil, ErrDecrypt
 	}
@@ -156,7 +156,7 @@ func Decrypt(key Key, message []byte) ([]byte, error) {
 	nonce := new([NonceSize]byte)
 	copy(nonce[:], message[:NonceSize])
 
-	out, ok := secretbox.Open(nil, message[NonceSize:], nonce, key)
+	out, ok := secretbox.Open(nil, message[NonceSize:], nonce, kc.Key())
 	if !ok {
 		return nil, ErrDecrypt
 	}
@@ -180,7 +180,7 @@ func EncryptWithSalt(pc *PassphraseContainer, nonce Nonce, message []byte) ([]by
 		return nil, err
 	}
 
-	encryptedData := Encrypt(kc.Key(), nonce, message)
+	encryptedData := Encrypt(kc, nonce, message)
 
 	contents := append(salt[:], encryptedData...)
 	return contents, nil
@@ -221,7 +221,7 @@ func DecryptWithSalt(pc *PassphraseContainer, message []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	return Decrypt(kc.Key(), message[SaltSize:])
+	return Decrypt(kc, message[SaltSize:])
 }
 
 // DecryptWithSaltFromStringToKey decrypts a base64-encoded key and returns it as a KeyContainer

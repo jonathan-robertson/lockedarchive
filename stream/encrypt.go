@@ -30,7 +30,7 @@ var (
 
 // Encrypt encrypts a stream of data in chunks.
 // IF SIZE IS KNOWN, caller should first use TooLargeToChunk
-func Encrypt(ctx context.Context, key secure.Key, r io.Reader, w io.Writer) (int64, error) {
+func Encrypt(ctx context.Context, kc *secure.KeyContainer, r io.Reader, w io.Writer) (int64, error) {
 	nonce, err := secure.GenerateNonce()
 	if err != nil {
 		return 0, err
@@ -61,7 +61,7 @@ func Encrypt(ctx context.Context, key secure.Key, r io.Reader, w io.Writer) (int
 			}
 
 			if length > 0 {
-				encryptedChunk := secure.EncryptAndWipe(key, nonce, chunk[:length])
+				encryptedChunk := secure.EncryptAndWipe(kc, nonce, chunk[:length])
 
 				bytesWritten, writeErr := w.Write(encryptedChunk)
 				if writeErr != nil {
@@ -78,7 +78,7 @@ func Encrypt(ctx context.Context, key secure.Key, r io.Reader, w io.Writer) (int
 }
 
 // Decrypt decrypts a stream of data in chunks
-func Decrypt(ctx context.Context, key secure.Key, r io.Reader, w io.Writer) (int64, error) {
+func Decrypt(ctx context.Context, kc *secure.KeyContainer, r io.Reader, w io.Writer) (int64, error) {
 	var (
 		chunk   = make([]byte, DecryptionChunkSize)
 		written int64
@@ -96,7 +96,7 @@ func Decrypt(ctx context.Context, key secure.Key, r io.Reader, w io.Writer) (int
 			}
 
 			if length > 0 {
-				decryptedChunk, encErr := secure.Decrypt(key, chunk[:length])
+				decryptedChunk, encErr := secure.Decrypt(kc, chunk[:length])
 				if encErr != nil {
 					return 0, encErr
 				}

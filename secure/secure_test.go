@@ -42,8 +42,8 @@ func TestEncrypt(t *testing.T) {
 
 	plaintext := []byte("string to test")
 
-	encrypted := encrypt(t, kc.Key(), plaintext)
-	decrypted := decrypt(t, kc.Key(), encrypted)
+	encrypted := encrypt(t, kc, plaintext)
+	decrypted := decrypt(t, kc, encrypted)
 	assertBytesEqual(t, plaintext, decrypted)
 
 	t.Log("data encrypted and decrypted to get same result")
@@ -86,12 +86,12 @@ func assertBytesEqual(t *testing.T, x, y []byte) {
 	}
 }
 
-func encrypt(t *testing.T, key secure.Key, plaintext []byte) []byte {
-	return secure.Encrypt(key, makeNonce(t), plaintext)
+func encrypt(t *testing.T, kc *secure.KeyContainer, plaintext []byte) []byte {
+	return secure.Encrypt(kc, makeNonce(t), plaintext)
 }
 
-func decrypt(t *testing.T, key secure.Key, ciphertext []byte) []byte {
-	decrypted, err := secure.Decrypt(key, ciphertext)
+func decrypt(t *testing.T, kc *secure.KeyContainer, ciphertext []byte) []byte {
+	decrypted, err := secure.Decrypt(kc, ciphertext)
 	if err != nil {
 		t.Fatal(err)
 	}
