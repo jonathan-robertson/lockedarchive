@@ -68,21 +68,14 @@ func (entry Entry) Meta(pc *secure.PassphraseContainer) (string, error) {
 }
 
 // UpdateMeta reads in encrypted metadata and translates it to Entry's fields
-func (entry *Entry) UpdateMeta(encryptedMeta string, kc *secure.KeyContainer) error {
-
-	// TODO: update to decrypt entry.Key with incoming passphrase
-
-	decoded, err := base64.StdEncoding.DecodeString(encryptedMeta)
+func (entry *Entry) UpdateMeta(pc *secure.PassphraseContainer, encryptedMeta string) error {
+	sc, err := secure.DecryptWithSaltFromStringToSecret(pc, encryptedMeta)
 	if err != nil {
 		return err
 	}
+	defer sc.Destroy()
 
-	plaintext, err := secure.Decrypt(kc, decoded)
-	if err != nil {
-		return err
-	}
-
-	return json.Unmarshal(plaintext, entry)
+	return json.Unmarshal(sc.Buffer(), entry)
 }
 
 // TODO

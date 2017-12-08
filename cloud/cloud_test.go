@@ -5,19 +5,63 @@ import (
 	"time"
 
 	"github.com/jonathan-robertson/lockedarchive/cloud"
+	"github.com/jonathan-robertson/lockedarchive/secure"
+)
+
+const (
+	pass = "fishies forever"
 )
 
 func TestEntry(t *testing.T) {
+
+	pc, err := secure.ProtectPassphrase([]byte(pass))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	kc, err := secure.GenerateKeyContainer()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keyStr, err := secure.EncryptWithSaltToString(pc, kc.Buffer())
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	entry := cloud.Entry{
-		Key:          "123456789",
-		ParentKey:    "987654321",
+		ID:           "testID",
+		Key:          keyStr,
+		ParentID:     "987654321",
 		Name:         "Important.doc",
 		IsDir:        false,
 		Size:         153432,
-		LastModified: time.Now(),
-		Mode:         nil,
+		LastModified: time.Now().Round(0),
+		Mode:         0655,
 	}
 
-	t.Fail("not implemented")
-	// TODO: need to finish deciding on how to encrypt/decrypt entry.Key first
+	meta, err := entry.Meta(pc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	otherEntry := cloud.Entry{ID: "test 2"}
+	if err := otherEntry.UpdateMeta(pc, meta); err != nil {
+		t.Fatal(err)
+	}
+	assertEquals(t, entry.Key, otherEntry.Key)
+	assertEquals(t, entry.ParentID, otherEntry.ParentID)
+	assertEquals(t, entry.Name, otherEntry.Name)
+	assertEquals(t, entry.IsDir, otherEntry.IsDir)
+	assertEquals(t, entry.Size, otherEntry.Size)
+	assertEquals(t, entry.LastModified, otherEntry.LastModified)
+	assertEquals(t, entry.Mode, otherEntry.Mode)
+
+	t.Log("entry metadata encrypted and decrypted successfully")
+}
+
+func assertEquals(t *testing.T, x, y interface{}) {
+	if x != y {
+		t.Fatalf("%+v != %+v", x, y)
+	}
 }
