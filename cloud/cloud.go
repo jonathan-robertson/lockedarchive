@@ -52,30 +52,25 @@ type Entry struct {
 }
 
 // Meta returns Entry's encrypted metadata
-func (entry Entry) Meta(kc *secure.KeyContainer) (encryptedMeta string, err error) {
-
-	// TODO: update to decrypt entry.Key with incoming key
-
+func (entry Entry) Meta(pc *secure.PassphraseContainer) (string, error) {
 	plaintext, err := json.Marshal(entry)
 	if err != nil {
-		return
+		return "", err
 	}
 
 	nonce, err := secure.GenerateNonce()
 	if err != nil {
-		return
+		return "", err
 	}
 
-	ciphertext := secure.EncryptAndWipe(kc, nonce, plaintext)
-
+	ciphertext, err := secure.EncryptWithSaltAndWipe(pc, nonce, plaintext)
 	return base64.StdEncoding.EncodeToString(ciphertext), err
 }
 
 // UpdateMeta reads in encrypted metadata and translates it to Entry's fields
-// TODO: Update to no longer receive key - pull it from config
 func (entry *Entry) UpdateMeta(encryptedMeta string, kc *secure.KeyContainer) error {
 
-	// TODO: update to decrypt entry.Key with incoming key
+	// TODO: update to decrypt entry.Key with incoming passphrase
 
 	decoded, err := base64.StdEncoding.DecodeString(encryptedMeta)
 	if err != nil {
