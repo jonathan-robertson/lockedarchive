@@ -28,3 +28,6 @@ testing
 
 # Config (hidden)
 .vscode
+
+# FileSystem
+.DS_Store
