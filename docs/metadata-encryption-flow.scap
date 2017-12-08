@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ScappleDocument Version="1.1" ID="74613480-620A-44B6-83C9-6FD1EACA1DD4">
+    <Notes>
+        <Note ID="0" FontSize="12.0" Position="160.011719,20.445312" Width="32.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>user</String>
+            <ConnectedNoteIDs>1</ConnectedNoteIDs>
+        </Note>
+        <Note ID="1" FontSize="12.0" Position="49.011719,81.445312" Width="71.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>passphrase</String>
+            <ConnectedNoteIDs>0, 8</ConnectedNoteIDs>
+        </Note>
+        <Note ID="3" FontSize="12.0" Position="231.011719,76.96875" Width="77.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>generateKey</String>
+            <ConnectedNoteIDs>4</ConnectedNoteIDs>
+        </Note>
+        <Note ID="4" FontSize="12.0" Position="229.011719,142.445312" Width="81.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>KeyContainer</String>
+            <ConnectedNoteIDs>3, 5</ConnectedNoteIDs>
+            <PointsToNoteIDs>5</PointsToNoteIDs>
+        </Note>
+        <Note ID="5" FontSize="12.0" Position="153.511719,203.445312" Width="45.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>KeyStr</String>
+            <ConnectedNoteIDs>4, 6, 8</ConnectedNoteIDs>
+        </Note>
+        <Note ID="6" FontSize="12.0" Position="146.511719,264.445312" Width="59.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>metadata</String>
+            <ConnectedNoteIDs>5, 8, 11</ConnectedNoteIDs>
+            <PointsToNoteIDs>11</PointsToNoteIDs>
+        </Note>
+        <Note ID="8" FontSize="12.0" Position="22.511719,142.445312" Width="124.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>PassphraseContainer</String>
+            <ConnectedNoteIDs>1, 5-6</ConnectedNoteIDs>
+            <PointsToNoteIDs>5-6</PointsToNoteIDs>
+        </Note>
+        <Note ID="11" FontSize="12.0" Position="137.011719,325.445312" Width="78.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>encMetadata</String>
+            <ConnectedNoteIDs>6</ConnectedNoteIDs>
+        </Note>
+        <Note ID="12" FontSize="12.0" Position="315.742188,77.0" Width="142.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+                <Border Weight="1">0.798177 0.714184 0.522055</Border>
+                <Fill>0.997722 0.89273 0.652569</Fill>
+            </Appearance>
+            <String>key used to encrypt body</String>
+        </Note>
+        <Note ID="13" FontSize="12.0" Position="221.414062,203.0" Width="199.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+                <Border Weight="1">0.798177 0.714184 0.522055</Border>
+                <Fill>0.997722 0.89273 0.652569</Fill>
+            </Appearance>
+            <String>encrypted string safe to pass in ram</String>
+        </Note>
+        <Note ID="14" FontSize="12.0" Position="225.042969,325.0" Width="220.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+                <Border Weight="1">0.798177 0.714184 0.522055</Border>
+                <Fill>0.997722 0.89273 0.652569</Fill>
+            </Appearance>
+            <String>encrypted metadata safe to store online</String>
+        </Note>
+    </Notes>
+    <BackgroundShapes></BackgroundShapes>
+    <AutoFit>0-1, 3-6, 8, 11-13</AutoFit>
+    <NoteStyles>
+        <Style Name="Bubble (Blue)" ID="DB50E7FD-65C3-4A78-824C-97C9193A550A" AffectFontStyle="No" AffectAlignment="No" AffectTextColor="No" AffectNoteBody="Yes" AffectFade="No">
+            <BorderThickness>1</BorderThickness>
+            <BorderColor>0.561855 0.71062 0.779401</BorderColor>
+            <FillColor>0.702319 0.888276 0.974252</FillColor>
+        </Style>
+        <Style Name="Bubble (Green)" ID="AACFF78E-CB03-4002-B0B9-213A54231A19" AffectFontStyle="No" AffectAlignment="No" AffectTextColor="No" AffectNoteBody="Yes" AffectFade="No">
+            <BorderThickness>1</BorderThickness>
+            <BorderColor>0.572684 0.758969 0.558154</BorderColor>
+            <FillColor>0.715855 0.948712 0.697692</FillColor>
+        </Style>
+        <Style Name="Bubble (Pink)" ID="6147F306-C117-4C8E-A25B-C8FAAA2691EE" AffectFontStyle="No" AffectAlignment="No" AffectTextColor="No" AffectNoteBody="Yes" AffectFade="No">
+            <BorderThickness>1</BorderThickness>
+            <BorderColor>0.794796 0.560965 0.58607</BorderColor>
+            <FillColor>0.957566 0.766747 0.999616</FillColor>
+        </Style>
+        <Style Name="Bubble (Red)" ID="E704A52F-82F0-4584-B331-F246BDD741D1" AffectFontStyle="No" AffectAlignment="No" AffectTextColor="No" AffectNoteBody="Yes" AffectFade="No">
+            <BorderThickness>1</BorderThickness>
+            <BorderColor>0.794796 0.560965 0.58607</BorderColor>
+            <FillColor>0.993495 0.701207 0.732587</FillColor>
+        </Style>
+        <Style Name="Bubble (Yellow)" ID="A87DD896-17A0-4477-83C4-844D2D688175" AffectFontStyle="No" AffectAlignment="No" AffectTextColor="No" AffectNoteBody="Yes" AffectFade="No">
+            <BorderThickness>1</BorderThickness>
+            <BorderColor>0.798177 0.714184 0.522055</BorderColor>
+            <FillColor>0.997722 0.89273 0.652569</FillColor>
+        </Style>
+        <Style Name="Red Text" ID="22134C62-E139-47B6-BE3D-6661EE63F1E8" AffectFontStyle="No" AffectAlignment="No" AffectTextColor="Yes" AffectNoteBody="No" AffectFade="No">
+            <TextColor>0.985948 0.0 0.026951</TextColor>
+        </Style>
+        <Style Name="Title Text" ID="5ED95660-BA01-47F7-AD74-B0D7B3215D0A" AffectFontStyle="Yes" AffectAlignment="Yes" AffectTextColor="No" AffectNoteBody="No" AffectFade="No">
+            <FontSize>28.0</FontSize>
+            <IsBold>Yes</IsBold>
+        </Style>
+    </NoteStyles>
+    <UISettings>
+        <BackgroundColor>0.999767 0.98837 0.949907</BackgroundColor>
+        <DefaultFont>Helvetica</DefaultFont>
+        <DefaultTextColor>0.0 0.0 0.0</DefaultTextColor>
+    </UISettings>
+    <PrintSettings PaperSize="612.0,792.0" LeftMargin="72.0" RightMargin="72.0" TopMargin="90.0" BottomMargin="90.0" PaperType="na-letter" Orientation="Portrait" HorizontalPagination="Clip" VerticalPagination="Auto" ScaleFactor="1.0" HorizontallyCentered="Yes" VerticallyCentered="Yes" Collates="Yes" PagesAcross="1" PagesDown="1"></PrintSettings>
+</ScappleDocument>

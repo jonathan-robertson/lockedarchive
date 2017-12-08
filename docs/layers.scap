@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ScappleDocument Version="1.1" ID="1BBA751C-70BC-4887-8656-0790AA22B277">
+    <Notes>
+        <Note ID="0" FontSize="12.0" Position="66.0,28.0" Width="55.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>LAYERS</String>
+        </Note>
+        <Note ID="1" FontSize="12.0" Position="66.0,56.0" Width="84.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>User Interface</String>
+        </Note>
+        <Note ID="2" FontSize="12.0" Position="66.0,84.0" Width="62.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>REST API</String>
+            <ConnectedNoteIDs>24</ConnectedNoteIDs>
+        </Note>
+        <Note ID="3" FontSize="12.0" Position="66.0,112.0" Width="49.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Service</String>
+            <ConnectedNoteIDs>10-11, 24</ConnectedNoteIDs>
+        </Note>
+        <Note ID="4" FontSize="12.0" Position="66.0,140.0" Width="53.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Caching</String>
+            <ConnectedNoteIDs>20</ConnectedNoteIDs>
+        </Note>
+        <Note ID="5" FontSize="12.0" Position="66.0,168.0" Width="40.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Cloud</String>
+            <ConnectedNoteIDs>20</ConnectedNoteIDs>
+        </Note>
+        <Note ID="10" FontSize="12.0" Position="452.0,99.0" Width="97.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Manages Queue</String>
+            <ConnectedNoteIDs>3</ConnectedNoteIDs>
+        </Note>
+        <Note ID="11" FontSize="12.0" Position="452.0,127.0" Width="116.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Dispatches Workers</String>
+            <ConnectedNoteIDs>3</ConnectedNoteIDs>
+        </Note>
+        <Note ID="15" FontSize="12.0" Position="845.0,340.0" Width="51.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>CACHE</String>
+            <ConnectedNoteIDs>34, 36-37</ConnectedNoteIDs>
+        </Note>
+        <Note ID="16" FontSize="12.0" Position="845.0,368.0" Width="161.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Put(srcPath string) (id string)</String>
+        </Note>
+        <Note ID="17" FontSize="12.0" Position="845.0,396.0" Width="109.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Get(id string) Entry</String>
+        </Note>
+        <Note ID="18" FontSize="12.0" Position="845.0,424.0" Width="129.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>GetInfo(id string) Entry</String>
+        </Note>
+        <Note ID="20" FontSize="12.0" Position="283.0,151.0" Width="147.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Thinks in terms of Objects</String>
+            <ConnectedNoteIDs>4-5</ConnectedNoteIDs>
+        </Note>
+        <Note ID="24" FontSize="12.0" Position="272.0,73.0" Width="145.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Thinks in terms of Actions</String>
+            <ConnectedNoteIDs>2-3</ConnectedNoteIDs>
+        </Note>
+        <Note ID="25" FontSize="12.0" Position="422.0,419.0" Width="49.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Service</String>
+            <ConnectedNoteIDs>26, 28, 30</ConnectedNoteIDs>
+            <PointsToNoteIDs>26</PointsToNoteIDs>
+        </Note>
+        <Note ID="26" FontSize="12.0" Position="425.0,500.0" Width="43.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Cache</String>
+            <ConnectedNoteIDs>25, 27, 31</ConnectedNoteIDs>
+            <PointsToNoteIDs>27</PointsToNoteIDs>
+        </Note>
+        <Note ID="27" FontSize="12.0" Position="427.0,580.0" Width="40.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Cloud</String>
+            <ConnectedNoteIDs>26, 31</ConnectedNoteIDs>
+        </Note>
+        <Note ID="28" FontSize="12.0" Position="416.0,339.0" Width="62.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>REST API</String>
+            <ConnectedNoteIDs>25, 29-30</ConnectedNoteIDs>
+            <PointsToNoteIDs>25</PointsToNoteIDs>
+        </Note>
+        <Note ID="29" FontSize="12.0" Position="405.0,258.0" Width="84.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>User Interface</String>
+            <ConnectedNoteIDs>28</ConnectedNoteIDs>
+            <PointsToNoteIDs>28</PointsToNoteIDs>
+        </Note>
+        <Note ID="30" FontSize="12.0" Position="189.0,379.0" Width="92.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Action-Focused</String>
+            <ConnectedNoteIDs>25, 28</ConnectedNoteIDs>
+        </Note>
+        <Note ID="31" FontSize="12.0" Position="189.0,540.0" Width="93.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Object-Focused</String>
+            <ConnectedNoteIDs>26-27</ConnectedNoteIDs>
+        </Note>
+        <Note ID="32" FontSize="12.0" Position="845.0,452.0" Width="122.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Delete(id string) error</String>
+        </Note>
+        <Note ID="33" FontSize="12.0" Position="845.0,480.0" Width="112.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Update(Entry) error</String>
+        </Note>
+        <Note ID="34" FontSize="12.0" Position="966.0,319.0" Width="29.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Bolt</String>
+            <ConnectedNoteIDs>15</ConnectedNoteIDs>
+        </Note>
+        <Note ID="35" FontSize="12.0" Position="845.0,508.0" Width="200.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Search(term string) map[string]string &lt;map[id]match&gt;</String>
+        </Note>
+        <Note ID="36" FontSize="12.0" Position="762.0,297.0" Width="39.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Bleve</String>
+            <ConnectedNoteIDs>15</ConnectedNoteIDs>
+        </Note>
+        <Note ID="37" FontSize="12.0" Position="822.0,274.0" Width="126.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Encryption/Decryption</String>
+            <ConnectedNoteIDs>15</ConnectedNoteIDs>
+        </Note>
+        <Note ID="44" FontSize="12.0" Position="1129.0,124.0" Width="62.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>REST API</String>
+        </Note>
+        <Note ID="45" FontSize="12.0" Position="1129.0,152.0" Width="154.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Create(path string) id string</String>
+        </Note>
+        <Note ID="46" FontSize="12.0" Position="1129.0,180.0" Width="179.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Read(id string) map[string]string</String>
+        </Note>
+        <Note ID="48" FontSize="12.0" Position="1129.0,208.0" Width="200.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Update(id string, properties map [string]string) success bool</String>
+        </Note>
+        <Note ID="49" FontSize="12.0" Position="1129.0,250.0" Width="166.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Delete(id string) success bool</String>
+        </Note>
+        <Note ID="50" FontSize="12.0" Position="1129.0,278.0" Width="200.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>Search(term string) map[string]string</String>
+        </Note>
+        <Note ID="51" FontSize="12.0" Position="1129.0,320.0" Width="126.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+            </Appearance>
+            <String>List []map[string]string</String>
+        </Note>
+        <Note ID="52" FontSize="12.0" Position="689.0,38.0" Width="166.0">
+            <Appearance>
+                <Alignment>Left</Alignment>
+                <TextColor>1.0 0.0 0.0</TextColor>
+            </Appearance>
+            <String>some of this may be outdated</String>
+        </Note>
+    </Notes>
+    <BackgroundShapes></BackgroundShapes>
+    <Stacks>
+        <Stack>0-5</Stack>
+        <Stack>10-11</Stack>
+        <Stack>15-18, 32-33, 35</Stack>
+        <Stack>44-46, 48-51</Stack>
+    </Stacks>
+    <AutoFit>0-5, 10-11, 15-18, 20, 24-34, 36-37, 44-46, 49, 51-52</AutoFit>
+    <NoteStyles>
+        <Style Name="Blue Bubble" ID="C0359D3B-E080-4E7F-A5B4-1740010ADE24" AffectFontStyle="No" AffectAlignment="No" AffectTextColor="No" AffectNoteBody="Yes" AffectFade="No">
+            <BorderThickness>1</BorderThickness>
+            <BorderColor>0.477193 0.557066 0.76433</BorderColor>
+            <FillColor>0.840969 0.866828 0.925903</FillColor>
+        </Style>
+        <Style Name="Brown Bubble" ID="EF27FCD4-A15B-45F6-83AE-2B96F9008A2D" AffectFontStyle="No" AffectAlignment="No" AffectTextColor="No" AffectNoteBody="Yes" AffectFade="No">
+            <BorderThickness>1</BorderThickness>
+            <BorderColor>0.290055 0.1523 0.182215</BorderColor>
+            <FillColor>0.940019 0.892907 0.779716</FillColor>
+        </Style>
+        <Style Name="Green Bubble" ID="7A528267-6393-4AA1-A953-779B64FB052E" AffectFontStyle="No" AffectAlignment="No" AffectTextColor="No" AffectNoteBody="Yes" AffectFade="No">
+            <BorderThickness>1</BorderThickness>
+            <BorderColor>0.331867 0.609932 0.356197</BorderColor>
+            <FillColor>0.790123 0.882328 0.80198</FillColor>
+        </Style>
+        <Style Name="Pink Bubble" ID="04C5E50D-CC03-446C-BDEB-3008134963DE" AffectFontStyle="No" AffectAlignment="No" AffectTextColor="No" AffectNoteBody="Yes" AffectFade="No">
+            <BorderThickness>1</BorderThickness>
+            <BorderColor>0.747881 0.366532 0.542813</BorderColor>
+            <FillColor>0.918452 0.807302 0.863467</FillColor>
+        </Style>
+        <Style Name="Red Text" ID="97F311FE-B76A-4E32-89A5-A452F54CBF3B" AffectFontStyle="No" AffectAlignment="No" AffectTextColor="Yes" AffectNoteBody="No" AffectFade="No">
+            <TextColor>1.0 0.0 0.0</TextColor>
+        </Style>
+        <Style Name="Title Text" ID="E7E5242D-9A12-423A-95F9-AB4AE3CAA9B2" AffectFontStyle="Yes" AffectAlignment="Yes" AffectTextColor="No" AffectNoteBody="No" AffectFade="No">
+            <FontSize>28.0</FontSize>
+            <IsBold>Yes</IsBold>
+        </Style>
+        <Style Name="Yellow Bubble" ID="DB770AA4-4562-428A-9ECF-91E5E05A66E2" AffectFontStyle="No" AffectAlignment="No" AffectTextColor="No" AffectNoteBody="Yes" AffectFade="No">
+            <BorderThickness>1</BorderThickness>
+            <BorderColor>0.756763 0.785592 0.373258</BorderColor>
+            <FillColor>0.906773 0.910625 0.634363</FillColor>
+        </Style>
+    </NoteStyles>
+    <UISettings>
+        <BackgroundColor>0.999737 0.986332 0.931298</BackgroundColor>
+        <DefaultFont>Helvetica</DefaultFont>
+        <DefaultTextColor>0.0 0.0 0.0</DefaultTextColor>
+    </UISettings>
+    <PrintSettings PaperSize="611.999993,792.0" LeftMargin="72.0" RightMargin="72.0" TopMargin="90.0" BottomMargin="90.0" PaperType="na-letter" Orientation="Portrait" HorizontalPagination="Clip" VerticalPagination="Auto" ScaleFactor="1.0" HorizontallyCentered="Yes" VerticallyCentered="Yes" Collates="Yes" PagesAcross="1" PagesDown="1"></PrintSettings>
+</ScappleDocument>
