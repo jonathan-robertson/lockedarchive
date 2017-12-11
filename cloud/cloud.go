@@ -25,7 +25,7 @@ type Client interface {
 
 	List(chan Entry) error
 
-	Upload(Entry, *os.File) error
+	Upload(string, string, *os.File) error
 	Head(Entry) error
 	Download(Entry) (io.ReadCloser, error)
 	Update(Entry) error

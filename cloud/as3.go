@@ -17,6 +17,10 @@ type AS3 struct {
 	Region string
 }
 
+const (
+	metadataPrefix = "la"
+)
+
 // AS3Client returns a new Client
 func AS3Client(bucketName, region string) (client Client) {
 	return &AS3{
@@ -66,12 +70,15 @@ func (client AS3) List(entries chan Entry) error {
 }
 
 // Upload sends an Entry to S3, along with its body and properties
-func (client AS3) Upload(entry Entry, file *os.File) error {
+func (client AS3) Upload(name, metadata string, file *os.File) error {
+	metaMap := make(map[string]string)
+	metaMap[metadataPrefix] = metadata
 	input := &s3.PutObjectInput{
-		Bucket: aws.String(client.Bucket),
-		Key:    aws.String(entry.Key),
-		Body:   aws.ReadSeekCloser(file),
-		// Tagging: aws.String("key1=value1&key2=value2"), // TODO: add this in later
+		Bucket:   aws.String(client.Bucket),
+		Key:      aws.String(name),
+		Metadata: aws.StringMap(metaMap),
+		Body:     aws.ReadSeekCloser(file),
+		// Tagging: aws.String("key1=value1&key2=value2"), // TODO: add this in later?
 	}
 	result, err := client.svc().PutObject(input)
 	if err != nil {
@@ -108,7 +115,7 @@ func (client AS3) Download(entry Entry) (io.ReadCloser, error) {
 	// TODO: Confirm checksum matches ETAG
 }
 
-// Head
+// Head fetches metadata information for an entry
 func (client AS3) Head(entry Entry) error {
 	input := &s3.HeadObjectInput{
 		Bucket: aws.String(client.Bucket),
@@ -131,7 +138,7 @@ func (client AS3) Head(entry Entry) error {
 	return nil
 }
 
-//
+// Update sends
 func (client AS3) Update(entry Entry) error {
 
 	return nil

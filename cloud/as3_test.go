@@ -4,19 +4,31 @@ import (
 	"testing"
 
 	"github.com/jonathan-robertson/lockedarchive/cloud"
+	"github.com/jonathan-robertson/lockedarchive/secure"
+)
+
+const (
+	testPassphrase = "passphrase"
 )
 
 func TestAS3(t *testing.T) {
-	var (
-		client = setupAS3(t)
-		entry  = Entry{
-			Key:   "123",
-			IsDir: true,
-		}
-	)
+	client := setupAS3(t)
+	entry := cloud.Entry{
+		Key:   "123",
+		IsDir: true,
+	}
+
+	pc, err := secure.ProtectPassphrase([]byte(testPassphrase))
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta, err := entry.Meta(pc)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	t.Run("Upload", func(t *testing.T) {
-		if err := client.Upload(entry); err != nil {
+		if err := client.Upload(entry.ID, meta, nil); err != nil {
 			t.Error(err)
 		}
 	})
@@ -26,12 +38,14 @@ func TestAS3(t *testing.T) {
 		}
 	})
 	t.Run("Download", func(t *testing.T) {
-		if err := client.Download(entry); err != nil {
+		rc, err := client.Download(entry)
+		if err != nil {
 			t.Error(err)
 		}
+		rc.Close()
 	})
 	t.Run("List", func(t *testing.T) {
-		entries := make(chan Entry)
+		entries := make(chan cloud.Entry)
 		go func() {
 			if err := client.List(entries); err != nil {
 				t.Error(err)
