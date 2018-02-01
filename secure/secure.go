@@ -255,6 +255,11 @@ func Wipe(data []byte) {
 	}
 }
 
+// Reset destroys all secured memory; helpful for initializing unit tests
+func Reset() {
+	memguard.DestroyAll()
+}
+
 // NOTE: expecting caller to wrap/wipe plaintext in mem-safe container
 func decryptWithSaltFromBase64(pc *PassphraseContainer, encoded string) ([]byte, error) {
 	ciphertext, err := base64.StdEncoding.DecodeString(encoded)

@@ -13,16 +13,19 @@ const (
 )
 
 func TestEntry(t *testing.T) {
+	secure.Reset()
 
 	pc, err := secure.ProtectPassphrase([]byte(pass))
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer pc.Destroy()
 
 	kc, err := secure.GenerateKeyContainer()
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer kc.Destroy()
 
 	keyStr, err := secure.EncryptWithSaltToString(pc, kc.Buffer())
 	if err != nil {
