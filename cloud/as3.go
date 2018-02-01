@@ -1,6 +1,8 @@
 package cloud
 
 import (
+	"crypto/md5"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -18,7 +20,7 @@ type AS3 struct {
 }
 
 const (
-	metadataPrefix = "la"
+	metadataPrefix = "X-Amz-Meta-La"
 )
 
 // AS3Client returns a new Client
@@ -70,33 +72,53 @@ func (client AS3) List(entries chan Entry) error {
 }
 
 // Upload sends an Entry to S3, along with its body and properties
-func (client AS3) Upload(name, metadata string, file *os.File) error {
+func (client AS3) Upload(id, metadata string, file *os.File) error {
+	hash, err := makeMD5(file)
+	if err != nil {
+		return err
+	}
+
 	metaMap := make(map[string]string)
 	metaMap[metadataPrefix] = metadata
+
 	input := &s3.PutObjectInput{
-		Bucket:   aws.String(client.Bucket),
-		Key:      aws.String(name),
-		Metadata: aws.StringMap(metaMap),
-		Body:     aws.ReadSeekCloser(file),
+		Bucket:     aws.String(client.Bucket),
+		Key:        aws.String(id),
+		Metadata:   aws.StringMap(metaMap),
+		ContentMD5: aws.String(hash),
 		// Tagging: aws.String("key1=value1&key2=value2"), // TODO: add this in later?
 	}
-	result, err := client.svc().PutObject(input)
-	if err != nil {
-		return evalErr(err)
+
+	if file != nil {
+		input.Body = aws.ReadSeekCloser(file)
 	}
 
-	// REVIEW: result returns ETag
-	// NOTE: this may indicate that the system did not perform a hash on the contents (!)
-	fmt.Printf("%+v\n", result)
-
+	_, err = client.svc().PutObject(input)
 	return evalErr(err)
+}
+
+func makeMD5(file *os.File) (hash64 string, err error) {
+	if file == nil {
+		return "", nil
+	}
+
+	// Hash contents of file
+	hash := md5.New()
+	if _, err = io.Copy(hash, file); err != nil {
+		return
+	}
+	hashSum := hash.Sum(nil)
+
+	// Encode to base64
+	hash64 = base64.StdEncoding.EncodeToString(hashSum)
+	return
 }
 
 // Download fetches entry's data from S3 and Puts it in cache
 func (client AS3) Download(entry Entry) (io.ReadCloser, error) {
 	input := &s3.GetObjectInput{
 		Bucket: aws.String(client.Bucket),
-		Key:    aws.String(entry.Key),
+		Key:    aws.String(entry.ID),
 	}
 
 	result, err := client.svc().GetObject(input)
@@ -104,38 +126,41 @@ func (client AS3) Download(entry Entry) (io.ReadCloser, error) {
 		return nil, evalErr(err)
 	}
 
-	fmt.Println(result.String()) // TODO: remove
-
 	if aws.Int64Value(result.ContentLength) == 0 {
 		// TODO: return error? does this even matter? Dirs will be size 0...
 	}
 
-	return result.Body, nil
+	// TODO: Confirm that local checksum matches ETAG
+	// NOTE: md5 checksums are sent to AS3 in bytes -> base64 format,
+	// while ETags are returned as bytes -> hex format, wrapped in quotes.
+	// Storing the bytes form of checksum locally and comparing it is probably a good idea.
+	// Maybe a check like this is better suited to Head method - to invalidate cached body
+	// for the file in the Head request.
 
-	// TODO: Confirm checksum matches ETAG
+	return result.Body, nil
 }
 
 // Head fetches metadata information for an entry
-func (client AS3) Head(entry Entry) error {
+func (client AS3) Head(entry Entry) (string, error) {
 	input := &s3.HeadObjectInput{
 		Bucket: aws.String(client.Bucket),
-		Key:    aws.String(entry.Key),
+		Key:    aws.String(entry.ID),
 	}
 
 	result, err := client.svc().HeadObject(input)
 	if err != nil {
-		return evalErr(err)
+		return "", evalErr(err)
 	}
 
-	entry.LastModified = aws.TimeValue(result.LastModified)
+	// entry.LastModified = aws.TimeValue(result.LastModified)
 	// TODO: if result.ETag differs from local checksum, remove cached version
 	// TODO: receive tags
 
+	// fmt.Printf("head: %+v\n", result)
 	// Metadata map[string]*string `location:"headers" locationName:"x-amz-meta-" type:"map"`
 
-	fmt.Printf("lameta: %s\n", aws.StringValue(result.Metadata["lameta"]))
-
-	return nil
+	metadata := aws.StringValue(result.Metadata[metadataPrefix])
+	return metadata, nil
 }
 
 // Update sends
@@ -148,7 +173,7 @@ func (client AS3) Update(entry Entry) error {
 func (client AS3) Delete(entry Entry) error {
 	input := &s3.DeleteObjectInput{
 		Bucket: aws.String(client.Bucket),
-		Key:    aws.String(entry.Key),
+		Key:    aws.String(entry.ID),
 	}
 
 	_, err := client.svc().DeleteObject(input)
